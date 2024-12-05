@@ -1,0 +1,160 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Calendrier Optimisé</title>
+    <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/fullcalendar@6.1.8/index.global.min.css">
+    <script src="https://cdn.jsdelivr.net/npm/fullcalendar@6.1.8/index.global.min.js"></script>
+</head>
+<body>
+    <button onclick="runAttribution()">Attribuer les dates</button>
+    <h1>Calendrier Optimisé</h1>
+    <div id="calendar"></div>
+    <script>
+        
+        // Fonction pour envoyer une requête POST pour attribuer les dates
+        function runAttribution() {
+            fetch('/run_attribution', {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json'
+                }
+            }).then(response => response.json())
+              .then(data => {
+                  if (data.success) {
+                      console.log("Attribution réussie !");
+                      console.log("Liste des appointments mise à jour :", data.appointments);
+                      alert("Attribution des dates terminée !");
+                      // Optionnel : Forcer le rafraîchissement des événements
+                      calendar.refetchEvents();
+                  } else {
+                      alert("Erreur lors de l'attribution des dates.");
+                  }
+              })
+              .catch(error => console.error("Erreur :", error));
+        }
+
+        function deleteEvent(event) {
+            if (confirm("Voulez-vous vraiment supprimer cet événement ?")) {
+                fetch('/delete_event', {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json'
+                    },
+                    body: JSON.stringify({
+                        id: event.id, // ID de l'événement à supprimer
+                        start: event.start.toISOString(), // Date de début de l'événement
+                        end: event.end.toISOString() // Date de fin de l'événement
+                    })
+                }).then(response => {
+                    if (response.ok) {
+                        alert("Événement supprimé avec succès !");
+                        event.remove(); // Supprime l'événement du calendrier
+                    } else {
+                        alert("Erreur lors de la suppression de l'événement.");
+                    }
+                }).catch(error => {
+                    console.error("Erreur réseau :", error);
+                    alert("Erreur réseau.");
+                });
+            }
+        }
+        
+        document.addEventListener('DOMContentLoaded', function() {
+            var calendarEl = document.getElementById('calendar');
+            var calendar = new FullCalendar.Calendar(calendarEl, {
+                locale : 'fr',
+                initialView: 'timeGridWeek',
+                slotMinTime : "06:00:00",
+                slotMaxTime : "22:00:00",
+                expandRows : true,
+                allDaySlot : false,
+                firstDay : 1,
+                editable : true,
+                timeZone : 'Europe/Paris',
+                events: '/events',
+                eventContent: function(info) {
+                    //création de l'élément qui contient la croix
+                    let deleteIcon = document.createElement('span');
+                    deleteIcon.innerHTML = '✖'; // Icône de croix
+                    deleteIcon.style.position = 'absolute';
+                    deleteIcon.style.top = '1px';
+                    deleteIcon.style.right = '5px';
+                    deleteIcon.style.cursor = 'pointer';
+                    deleteIcon.style.color = 'red';
+                    deleteIcon.style.fontSize = '10px';
+                    
+                    // Ajout d'un gestionnaire de clic pour supprimer l'événement
+                    deleteIcon.addEventListener('click', function(e) {
+                    e.stopPropagation(); // Empêche l'ouverture du détail de l'événement
+                    deleteEvent(info.event); // Fonction pour supprimer l'événement
+                    });
+
+                    // Contenu de l'événement
+                    let title = document.createElement('span');
+                    title.innerText = info.event.title;
+                    title.style.position = 'absolute';
+                    title.style.bottom = '5px';
+                    title.style.left = '5px';
+
+                    // Conteneur de l'événement
+                    let container = document.createElement('div');
+                    container.appendChild(title);
+                    container.appendChild(deleteIcon);
+
+                    return { domNodes: [container] };
+                },
+                eventDrop: function(info) {
+                    // Envoyer les modifications au backend Flask
+                    fetch('/update_event', {
+                        method: 'POST',
+                        headers: {
+                            'Content-Type': 'application/json'
+                        },
+                        body: JSON.stringify({
+                            id: info.event.id, // ID de l'événement déplacé
+                            start: info.event.start.toISOString(), // Nouvelle date/heure de début
+                            end: info.event.end ? info.event.end.toISOString() : null
+                        })
+                    }).then(response => {
+                        if (response.ok) {
+                            alert('Créneau mis à jour avec succès !');
+                        } else {
+                            alert('Erreur lors de la mise à jour.');
+                        }
+                    }).catch(error => {
+                        console.error('Erreur réseau :', error);
+                        alert('Erreur réseau.');
+                    });
+                },
+                eventResize: function(info) {
+                    // Calculer la nouvelle durée
+                    const newDuration = (info.event.end - info.event.start) / (1000 * 60); // Différence en minutes
+
+                    // Envoyer la nouvelle durée au backend
+                    fetch('/update_duration', {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify({
+                            id: info.event.id,
+                            duration: newDuration // Nouvelle durée en minutes
+                        })
+                    }).then(response => {
+                        if (response.ok) {
+                            alert('Durée mise à jour avec succès !');
+                        } else {
+                            alert('Erreur lors de la mise à jour de la durée.');
+                        }
+                    }).catch(error => {
+                        console.error('Erreur réseau :', error);
+                        alert('Erreur réseau.');
+                    });
+                },
+                
+            });
+            calendar.render();
+        });
+    </script>
+</body>
+</html>
