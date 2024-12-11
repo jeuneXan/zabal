@@ -299,15 +299,21 @@ def delete_event():
     global appointments
     appointments = [appt for appt in appointments if str(appt["id"]) != str(event_id)]
     meilleurRdv = recalculDate.caler_meilleur_appointment(event_start, event_end, appointments)
-    for appointment in appointments:
-        if appointment["id"]==meilleurRdv["id"]:
-            appointment["start"] = meilleurRdv["start"]
-            appointment["end"] = meilleurRdv["end"]
-            print(f"Créneau mis à jour : {appointments}")
-            break
+    if meilleurRdv :
+        title = meilleurRdv["title"]
+        for appointment in appointments:
+            if appointment["id"]==meilleurRdv["id"]:
+                appointment["start"] = meilleurRdv["start"]
+                appointment["end"] = meilleurRdv["end"]
+                print(f"Créneau mis à jour : {appointments}")
+                break
+        print(f"Événement avec ID={event_id} supprimé et remplacé avec RDV={title}.")
+        return jsonify({"success": True})
+    else : 
+        print(f"Événement avec ID={event_id} supprimé.")
+        return jsonify({"success": True})
 
-    print(f"Événement avec ID={event_id} supprimé.")
-    return jsonify({"success": True})
+    
 
 
 @app.route("/update_duration", methods=["POST"])
@@ -333,7 +339,7 @@ def update_duration():
         break
 
     return jsonify({"success": True})
-
+print(appointments)
 
 if __name__ == "__main__":
     app.run(debug=True)
