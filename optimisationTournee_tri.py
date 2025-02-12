@@ -68,49 +68,30 @@ def call_disc_api(date_start: datetime, date_end: datetime):
     }
     
     print("=== DÉBUT DE L'APPEL API DISC ===")
-    print(f"URL: {url}")
-    print(f"Paramètres: {params}")
-    print(f"Headers envoyés: {headers}")
     
-    try:
-        # Récupération de la session authentifiée
-        session = get_api_session()
-        
-        # Effectue l'appel GET avec désactivation temporaire des redirections pour le debug
-        response = session.get(url, params=params, headers=headers, allow_redirects=False)
-        
-        print("=== Requête effectuée ===")
-        print(f"Méthode: {response.request.method}")
-        print(f"URL complète de la requête: {response.request.url}")
-        print(f"En-têtes de la requête: {response.request.headers}")
-        
-        # Vérifie et affiche l'historique des redirections
-        if response.is_redirect or response.status_code in (301, 302, 303, 307, 308):
-            print("Redirection détectée :")
-            for resp in response.history:
-                print(f" - {resp.status_code} : {resp.url}")
-            redirect_url = response.headers.get("Location")
-            print(f"URL finale après redirection (Location): {redirect_url}")
-            if redirect_url and "login" in redirect_url.lower():
-                raise Exception("La requête est redirigée vers la page de login. Vérifiez l'authentification ou les droits d'accès.")
-        
-        print("=== Réponse reçue ===")
-        print(f"Code de statut: {response.status_code}")
-        print(f"En-têtes de la réponse: {response.headers}")
-        print(f"Contenu de la réponse (500 premiers caractères): {response.text[:500]}")
-        
-        response.raise_for_status()
-        
-        try:
-            interventions = response.json()
-            print("=== Appel API réussi, données récupérées ===")
-            return interventions
-        except Exception as json_err:
-            print("Erreur lors du parsing JSON:", json_err)
-            return None
-    except Exception as e:
-        print(f"Erreur lors de l'appel à l'API DISC: {e}")
-        return None
+        # Récupération de l'URL de base
+    api_url = os.environ.get("API_URL", "https://preprod.disc-chantier.com")
+    login_url = f"{api_url}/login"
+    print(f"Connexion à l'API : {api_url}")
+
+    # Création d'une session pour gérer les cookies
+    session = requests.Session()
+
+    # Préparation des données de connexion, en incluant le paramètre _remember_me
+    login_data = {
+        '_username': os.environ.get("API_USERNAME", "erle@disc-chantier.com"),
+        '_password': os.environ.get("API_PASSWORD", "elre123.lo"),
+        '_remember_me': 'on'  # On envoie le paramètre pour activer "se souvenir de moi"
+    }
+
+    # Envoi de la requête de connexion (les redirections sont suivies par défaut)
+    response = session.post(login_url, data=login_data)
+    print(response.status_code)
+
+    # Effectue l'appel GET avec désactivation temporaire des redirections pour le debug
+    response = session.get(url)
+    print(response.status_code)
+    print(response.text)
 
 def filter_and_transform_intervention(interv, opt_start, opt_end):
     """
