@@ -1,5 +1,6 @@
 import os
 import requests
+import re
 
 # Variable privée pour stocker la session unique
 _session = None
@@ -13,7 +14,7 @@ def login_to_api():
       - API_USERNAME : Nom d'utilisateur (défaut : "erle@disc-chantier.com")
       - API_PASSWORD : Mot de passe (défaut : "elre123.lo")
       - API_CSRF_TOKEN : Jeton CSRF (défaut : chaîne vide)
-      - API_REMEMBERME : Valeur à forcer pour le cookie REMEMBERME (si nécessaire)
+      - (Le paramètre _remember_me est envoyé pour activer le "remember me")
     """
     # Récupération de l'URL de base
     api_url = os.environ.get("API_URL", "https://preprod.disc-chantier.com")
@@ -25,10 +26,10 @@ def login_to_api():
         '_username': os.environ.get("API_USERNAME", "erle@disc-chantier.com"),
         '_password': os.environ.get("API_PASSWORD", "elre123.lo"),
         '_csrf_token': os.environ.get("API_CSRF_TOKEN", ""),
-        '_remember_me': 'on'  # Envoi du paramètre pour activer le "remember me"
+        '_remember_me': 'on'  # On envoie le paramètre pour activer "se souvenir de moi"
     }
 
-    # Ajout d'en-têtes pour imiter le comportement d'un navigateur
+    # Ajout d'en-têtes pour imiter une requête navigateur
     headers = {
         "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/132.0.0.0 Safari/537.36",
         "Referer": f"{api_url}/login",
@@ -51,17 +52,21 @@ def login_to_api():
     cookies = session.cookies.get_dict()
     print("Cookies récupérés initialement :", cookies)
 
-    # Si le cookie REMEMBERME n'est pas présent, le forcer
+    # Si le cookie REMEMBERME n'est pas présent, on tente de l'extraire depuis le contenu de la réponse
     if 'REMEMBERME' not in cookies:
-        # Récupère une valeur par défaut depuis l'environnement ou utilise une valeur "forcée"
-        remember_me_value = os.environ.get("API_REMEMBERME", "App.Entity.User%3AZXJsZUBkaXNjLWNoYW50aWVyLmNvbQ~~%3A1739978022%3Adn0fdCzTUkDuoIdedZvKQteSBNcSHmnyCEs72A-lnE4~YAMrK0_6zOipEX14AKgDe3rIV0tkIjqWapbTPYlwB-k~")
-        # Force l'ajout du cookie REMEMBERME dans la session
-        session.cookies.set("REMEMBERME", remember_me_value,
-                              domain="preprod.disc-chantier.com",
-                              path="/")
-        print("Cookie REMEMBERME forcé dans la session.")
+        # On recherche une séquence de type "REMEMBERME=..." dans le contenu HTML
+        match = re.search(r"REMEMBERME=([^;\s]+)", response.text)
+        if match:
+            remember_me_value = match.group(1)
+            # Enregistrement du cookie REMEMBERME dans la session
+            session.cookies.set("REMEMBERME", remember_me_value,
+                                  domain="preprod.disc-chantier.com",
+                                  path="/")
+            print("Cookie REMEMBERME extrait du retour et enregistré dans la session.")
+        else:
+            print("Impossible d'extraire le cookie REMEMBERME du retour.")
 
-    # Affichage final des cookies
+    # Affichage final des cookies dans la session
     final_cookies = session.cookies.get_dict()
     print("Cookies finaux dans la session :", final_cookies)
 
