@@ -34,6 +34,7 @@ def call_disc_api(date_debut, date_fin):
         "datedebut": date_debut.isoformat(),
         "datefin": date_fin.isoformat()
     }
+    print(f"Appel à l'API DISC: {url} avec les paramètres: {params}")
     try:
         response = requests.get(url, params=params)
         response.raise_for_status()
