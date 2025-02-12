@@ -2,6 +2,8 @@ import os
 import requests
 from datetime import datetime, timedelta
 
+from authentification import get_api_session 
+
 def is_workday(date_obj):
     """Retourne True si la date est un jour ouvré (lundi à vendredi)."""
     return date_obj.weekday() < 5  # 0 = lundi, 6 = dimanche
@@ -19,13 +21,20 @@ def add_workdays(start_date, workdays):
             added_days += 1
     return current_date
 
+import os
+from authentification import get_api_session
+
 def call_disc_api(date_debut, date_fin):
     """
     Appelle l'API du DISC pour récupérer les interventions.
+    
     - L'URL de base est récupérée depuis la variable d'environnement DISC_API_URL,
       avec la valeur par défaut 'https://preprod.disc-chantier.com/api'.
     - L'endpoint est '/rvinterventions'.
     - Les paramètres envoyés sont 'datedebut' et 'datefin' au format ISO 8601.
+    - Un header 'Accept: application/json' est ajouté pour demander une réponse JSON.
+    
+    Cette version affiche la requête effectuée ainsi que la réponse pour faciliter le débogage.
     """
     base_url = os.environ.get("DISC_API_URL", "https://preprod.disc-chantier.com/api")
     endpoint = "/rvinterventions"
@@ -34,16 +43,44 @@ def call_disc_api(date_debut, date_fin):
         "datedebut": date_debut.isoformat(),
         "datefin": date_fin.isoformat()
     }
-    print(f"Appel à l'API DISC: {url} avec les paramètres: {params}")
+    
+    # Header par défaut pour obtenir du JSON
+    headers = {"Accept": "application/json"}
+    
+    print("=== DÉBUT DE L'APPEL API DISC ===")
+    print(f"URL: {url}")
+    print(f"Paramètres: {params}")
+    print(f"Headers envoyés: {headers}")
+    
     try:
-        response = requests.get(url, params=params)
+        # Récupère la session connectée (la connexion se fait une seule fois)
+        session = get_api_session()
+        # Effectue l'appel GET en utilisant la session (le cookie de session est automatiquement envoyé)
+        response = session.get(url, params=params, headers=headers)
+        
+        # Affichage des informations sur la requête effectuée
+        print("=== Requête effectuée ===")
+        print(f"Méthode: {response.request.method}")
+        print(f"URL complète de la requête: {response.request.url}")
+        print(f"En-têtes de la requête: {response.request.headers}")
+        
+        # Affichage des informations sur la réponse
+        print("=== Réponse reçue ===")
+        print(f"Code de statut: {response.status_code}")
+        print(f"En-têtes de la réponse: {response.headers}")
+        print(f"Contenu de la réponse: {response.text}")
+        
+        # Lève une exception si le code de statut n'indique pas le succès (200-299)
         response.raise_for_status()
+        
         interventions = response.json()
+        print("=== Appel API réussi, données récupérées ===")
         return interventions
     except Exception as e:
-        # Gestion d'erreur classique (à ajuster si besoin)
         print(f"Erreur lors de l'appel à l'API DISC: {e}")
         return []  # Retourne une liste vide en cas d'erreur
+
+
 
 def filter_and_transform_intervention(interv, opt_start, opt_end):
     """
