@@ -21,31 +21,51 @@ def add_workdays(start_date, workdays):
             added_days += 1
     return current_date
 
-import os
-from authentification import get_api_session
 
-def call_disc_api(date_debut, date_fin):
+
+def call_disc_api(date_start: datetime, date_end: datetime):
     """
     Appelle l'API du DISC pour récupérer les interventions.
     
     - L'URL de base est récupérée depuis la variable d'environnement DISC_API_URL,
       avec la valeur par défaut 'https://preprod.disc-chantier.com/api'.
-    - L'endpoint est '/rvinterventions'.
-    - Les paramètres envoyés sont 'datedebut' et 'datefin' au format ISO 8601.
-    - Un header 'Accept: application/json' est ajouté pour demander une réponse JSON.
+    - L'endpoint utilisé est '/rvinterventions/rvintervention-planning-dispo'.
+    - Les paramètres envoyés sont 'datestart', 'dateend' (au format dd/mm/YYYY) et 'urgence' fixé à "1".
     
-    Cette version affiche la requête effectuée ainsi que la réponse pour faciliter le débogage.
+    Les en-têtes imitent ceux envoyés par le navigateur :
+      - Accept: "application/json, text/plain, */*"
+      - Accept-Encoding, Accept-Language, Connection, Referer, Sec-Fetch-*, User-Agent, sec-ch-ua, etc.
+      
+    La fonction désactive temporairement le suivi des redirections pour afficher les informations
+    de la requête et de la réponse.
     """
     base_url = os.environ.get("DISC_API_URL", "https://preprod.disc-chantier.com/api")
+    # On utilise l'endpoint tel qu'il apparaît dans votre appel navigateur
     endpoint = "/rvinterventions"
     url = base_url + endpoint
+    
+    # Formatage des dates au format dd/mm/YYYY
     params = {
-        "datedebut": date_debut.isoformat(),
-        "datefin": date_fin.isoformat()
+        "datestart": date_start.strftime("%d/%m/%Y"),
+        "dateend": date_end.strftime("%d/%m/%Y"),
+        "urgence": "1"
     }
     
-    # Header par défaut pour obtenir du JSON
-    headers = {"Accept": "application/json"}
+    # En-têtes pour imiter le navigateur
+    headers = {
+        "Accept": "application/json, text/plain, */*",
+        "Accept-Encoding": "gzip, deflate, br, zstd",
+        "Accept-Language": "fr,fr-FR;q=0.9,en;q=0.8,en-GB;q=0.7,en-US;q=0.6",
+        "Connection": "keep-alive",
+        "Referer": "https://preprod.disc-chantier.com/rvintervention-planning",
+        "Sec-Fetch-Dest": "empty",
+        "Sec-Fetch-Mode": "cors",
+        "Sec-Fetch-Site": "same-origin",
+        "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/132.0.0.0 Safari/537.36 Edg/132.0.0.0",
+        "sec-ch-ua": '"Not A(Brand";v="8", "Chromium";v="132", "Microsoft Edge";v="132"',
+        "sec-ch-ua-mobile": "?0",
+        "sec-ch-ua-platform": "Windows"
+    }
     
     print("=== DÉBUT DE L'APPEL API DISC ===")
     print(f"URL: {url}")
@@ -53,34 +73,44 @@ def call_disc_api(date_debut, date_fin):
     print(f"Headers envoyés: {headers}")
     
     try:
-        # Récupère la session connectée (la connexion se fait une seule fois)
+        # Récupération de la session authentifiée
         session = get_api_session()
-        # Effectue l'appel GET en utilisant la session (le cookie de session est automatiquement envoyé)
-        response = session.get(url, params=params, headers=headers)
         
-        # Affichage des informations sur la requête effectuée
+        # Effectue l'appel GET avec désactivation temporaire des redirections pour le debug
+        response = session.get(url, params=params, headers=headers, allow_redirects=False)
+        
         print("=== Requête effectuée ===")
         print(f"Méthode: {response.request.method}")
         print(f"URL complète de la requête: {response.request.url}")
         print(f"En-têtes de la requête: {response.request.headers}")
         
-        # Affichage des informations sur la réponse
+        # Vérifie et affiche l'historique des redirections
+        if response.is_redirect or response.status_code in (301, 302, 303, 307, 308):
+            print("Redirection détectée :")
+            for resp in response.history:
+                print(f" - {resp.status_code} : {resp.url}")
+            redirect_url = response.headers.get("Location")
+            print(f"URL finale après redirection (Location): {redirect_url}")
+            if redirect_url and "login" in redirect_url.lower():
+                raise Exception("La requête est redirigée vers la page de login. Vérifiez l'authentification ou les droits d'accès.")
+        
         print("=== Réponse reçue ===")
         print(f"Code de statut: {response.status_code}")
         print(f"En-têtes de la réponse: {response.headers}")
-        print(f"Contenu de la réponse: {response.text}")
+        print(f"Contenu de la réponse (500 premiers caractères): {response.text[:500]}")
         
-        # Lève une exception si le code de statut n'indique pas le succès (200-299)
         response.raise_for_status()
         
-        interventions = response.json()
-        print("=== Appel API réussi, données récupérées ===")
-        return interventions
+        try:
+            interventions = response.json()
+            print("=== Appel API réussi, données récupérées ===")
+            return interventions
+        except Exception as json_err:
+            print("Erreur lors du parsing JSON:", json_err)
+            return None
     except Exception as e:
         print(f"Erreur lors de l'appel à l'API DISC: {e}")
-        return []  # Retourne une liste vide en cas d'erreur
-
-
+        return None
 
 def filter_and_transform_intervention(interv, opt_start, opt_end):
     """
