@@ -1,15 +1,44 @@
 import json
+import requests
+import os
+import sys
+
+# Ajouter le dossier parent (zabal/) au PYTHONPATH
+sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), '..')))
+
 from datetime import datetime, timedelta
 from math import radians, sin, cos, sqrt, atan2
+from authentification import get_api_session
 
 def charger_rendez_vous(fichier="data/rendez_vous.json"):
-    """Charge les rendez-vous depuis un fichier JSON."""
+    """Récupère les rendez-vous depuis l'API externe en utilisant la session authentifiée."""
+    
+    # URL de l’API pour récupérer les rendez-vous
+    base_url = os.environ.get("API_URL", "https://preprod.disc-chantier.com")
+    endpoint = "/api/rvinterventions"  # Modifier si nécessaire
+    url = f"{base_url}{endpoint}"
+
+    print(f"📡 Récupération des rendez-vous depuis {url}...")
+
     try:
-        with open(fichier, "r", encoding="utf-8") as f:
-            return json.load(f)
-    except Exception as e:
-        print(f"⚠️ Erreur lors du chargement des rendez-vous : {e}")
-        return []
+        # Obtenir la session API authentifiée
+        session = get_api_session()
+        print("📡 Envoi de la requête avec le cookie :", session.cookies.get_dict())
+        # Faire la requête GET pour récupérer les rendez-vous
+        response = session.get(url)
+        print(f"🔎 Réponse brute de l'API : {response.text}")  # Ajout pour debug
+        response.raise_for_status()  # Gère les erreurs HTTP
+
+        interventions = response.json()
+        
+        if not interventions:
+            print("⚠️ L'API n'a retourné aucun rendez-vous !")
+        
+        return interventions
+
+    except requests.RequestException as e:
+        print(f"❌ Erreur lors de l'appel à l'API : {e}")
+        return []  # Retourne une liste vide en cas d'erreur
 
 def calculer_distance(coord1, coord2):
     """Calcule la distance entre deux points GPS (latitude, longitude) en km."""

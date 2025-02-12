@@ -1,5 +1,5 @@
 from datetime import datetime
-from solver.utils import charger_rendez_vous, jours_ouvres, distance_moyenne_avec_poseurs
+from replace_utils import charger_rendez_vous, jours_ouvres, distance_moyenne_avec_poseurs
 
 def preparer_donnees_optimisation():
     """Charge et trie les rendez-vous avant optimisation."""

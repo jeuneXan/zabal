@@ -26,16 +26,23 @@ def optimiser_affectation_poseurs(poseurs_libres, candidats):
     print("Poseurs libres :", poseurs_libres)
     model.Maximize(sum(assignments[(poseur, j)] for poseur, j in assignments))
 
-
     # Résolution du modèle
     solver = cp_model.CpSolver()
     status = solver.Solve(model)
 
+    resultats = []
     if status in [cp_model.OPTIMAL, cp_model.FEASIBLE]:
         for poseur_info in poseurs_libres:
             poseur = poseur_info["poseur"]
             for j, candidat in enumerate(candidats):
                 if solver.Value(assignments.get((poseur, j), 0)) == 1:
                     print(f"🔄 {candidat['nom']} ({candidat['id_rdv']}) remplace un annulé.")
+                    resultats.append({
+                        "poseur": poseur,
+                        "remplacement": candidat['nom'],
+                        "id_rdv": candidat['id_rdv']
+                    })
     else:
         print("❌ Aucune solution trouvée.")
+
+    return resultats  # Ajout du retour des résultats
