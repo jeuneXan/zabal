@@ -44,6 +44,7 @@ def login_to_api():
 
     if response.ok:
         print("Connexion réussie à l'API.")
+        print("voici le retour :", response.text)
     else:
         print("Erreur lors de la connexion à l'API :", response.status_code)
         print("Détails :", response.text)
