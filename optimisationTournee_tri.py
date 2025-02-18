@@ -1,8 +1,11 @@
 import os
 import requests
 from datetime import datetime, timedelta
+from dateutil.parser import parse
+
 
 from authentification import get_api_session 
+from utils import to_datetime
 
 def is_workday(date_obj):
     """Retourne True si la date est un jour ouvré (lundi à vendredi)."""
@@ -21,77 +24,98 @@ def add_workdays(start_date, workdays):
             added_days += 1
     return current_date
 
+import requests
+
+def get_poseur_ids():
+    """
+    Appelle l'API à l'URL spécifiée et récupère toutes les users du groupe "Poseur".
+    
+    Retourne une liste d'ID de poseurs.
+    """
+    base_url = os.environ.get("API_URL", "https://preprod.disc-chantier.com")
+    endpoint = "/api/typeusers"  # Modifier si nécessaire
+    url = f"{base_url}{endpoint}"
+
+
+    try:
+        # Obtenir la session API authentifiée
+        session = get_api_session()
+        # Faire la requête GET pour récupérer les rendez-vous
+        response = session.get(url)
+        response.raise_for_status()  # Gère les erreurs HTTP
+
+        users = response.json()
+        
+        if not users:
+            print("⚠️ L'API n'a retourné aucun rendez-vous !")
+        
+        poseurs = []
+        for group in users:
+            if group.get("nom", "").strip().lower() == "poseur":
+                # Extraire les IDs de tous les users de ce groupe
+                for user in group.get("users", []):
+                    user_id = user.get("id")
+                    if user_id is not None:
+                        poseurs.append(user_id)
+                break  # On s'arrête dès qu'on a trouvé le groupe "Poseur"
+    
+        return poseurs
+    except requests.RequestException as e:
+        return []
+
+
+def get_gps(idChantier):
+    """
+    Appelle l'API à l'URL spécifiée et récupère toutes les users du groupe "Poseur".
+    
+    Retourne une liste d'ID de poseurs.
+    """
+    base_url = os.environ.get("API_URL", "https://preprod.disc-chantier.com")
+    endpoint = "/api/chantiers/" + str(idChantier)  # Modifier si nécessaire
+    url = f"{base_url}{endpoint}"
+    try:
+        # Obtenir la session API authentifiée
+        session = get_api_session()
+        # Faire la requête GET pour récupérer les rendez-vous
+        response = session.get(url)
+        response.raise_for_status()  # Gère les erreurs HTTP
+
+        chantier = response.json()
+        
+        if not chantier:
+            print("⚠️ L'API n'a retourné aucun rendez-vous !")
+        
+        gps=chantier.get("gps")
+    
+        return gps
+    except requests.RequestException as e:
+        return []
 
 
 def call_disc_api(date_start: datetime, date_end: datetime):
-    """
-    Appelle l'API du DISC pour récupérer les interventions.
-    
-    - L'URL de base est récupérée depuis la variable d'environnement DISC_API_URL,
-      avec la valeur par défaut 'https://preprod.disc-chantier.com/api'.
-    - L'endpoint utilisé est '/rvinterventions/rvintervention-planning-dispo'.
-    - Les paramètres envoyés sont 'datestart', 'dateend' (au format dd/mm/YYYY) et 'urgence' fixé à "1".
-    
-    Les en-têtes imitent ceux envoyés par le navigateur :
-      - Accept: "application/json, text/plain, */*"
-      - Accept-Encoding, Accept-Language, Connection, Referer, Sec-Fetch-*, User-Agent, sec-ch-ua, etc.
-      
-    La fonction désactive temporairement le suivi des redirections pour afficher les informations
-    de la requête et de la réponse.
-    """
-    base_url = os.environ.get("DISC_API_URL", "https://preprod.disc-chantier.com/api")
-    # On utilise l'endpoint tel qu'il apparaît dans votre appel navigateur
-    endpoint = "/rvinterventions"
-    url = base_url + endpoint
-    
-    # Formatage des dates au format dd/mm/YYYY
-    params = {
-        "datestart": date_start.strftime("%d/%m/%Y"),
-        "dateend": date_end.strftime("%d/%m/%Y"),
-        "urgence": "1"
-    }
-    
-    # En-têtes pour imiter le navigateur
-    headers = {
-        "Accept": "application/json, text/plain, */*",
-        "Accept-Encoding": "gzip, deflate, br, zstd",
-        "Accept-Language": "fr,fr-FR;q=0.9,en;q=0.8,en-GB;q=0.7,en-US;q=0.6",
-        "Connection": "keep-alive",
-        "Referer": "https://preprod.disc-chantier.com/rvintervention-planning",
-        "Sec-Fetch-Dest": "empty",
-        "Sec-Fetch-Mode": "cors",
-        "Sec-Fetch-Site": "same-origin",
-        "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/132.0.0.0 Safari/537.36 Edg/132.0.0.0",
-        "sec-ch-ua": '"Not A(Brand";v="8", "Chromium";v="132", "Microsoft Edge";v="132"',
-        "sec-ch-ua-mobile": "?0",
-        "sec-ch-ua-platform": "Windows"
-    }
-    
-    print("=== DÉBUT DE L'APPEL API DISC ===")
-    
-        # Récupération de l'URL de base
-    api_url = os.environ.get("API_URL", "https://preprod.disc-chantier.com")
-    login_url = f"{api_url}/login"
-    print(f"Connexion à l'API : {api_url}")
+    base_url = os.environ.get("API_URL", "https://preprod.disc-chantier.com")
+    endpoint = "/api/rvinterventions/by-dates?datestart=17/02/2025&dateend=17/02/2025"  # Modifier si nécessaire
+    url = f"{base_url}{endpoint}"
 
-    # Création d'une session pour gérer les cookies
-    session = requests.Session()
 
-    # Préparation des données de connexion, en incluant le paramètre _remember_me
-    login_data = {
-        '_username': os.environ.get("API_USERNAME", "erle@disc-chantier.com"),
-        '_password': os.environ.get("API_PASSWORD", "elre123.lo"),
-        '_remember_me': 'on'  # On envoie le paramètre pour activer "se souvenir de moi"
-    }
+    try:
+        # Obtenir la session API authentifiée
+        session = get_api_session()
+        # Faire la requête GET pour récupérer les rendez-vous
+        response = session.get(url)
+        response.raise_for_status()  # Gère les erreurs HTTP
 
-    # Envoi de la requête de connexion (les redirections sont suivies par défaut)
-    response = session.post(login_url, data=login_data)
-    print(response.status_code)
+        interventions = response.json()
+        
+        if not interventions:
+            print("⚠️ L'API n'a retourné aucun rendez-vous !")
+        
+        return interventions
+    except requests.RequestException as e:
+        return []  # Retourne une liste vide en cas d'erreur
 
-    # Effectue l'appel GET avec désactivation temporaire des redirections pour le debug
-    response = session.get(url)
-    print(response.status_code)
-    print(response.text)
+
+
 
 def filter_and_transform_intervention(interv, opt_start, opt_end):
     """
@@ -101,98 +125,99 @@ def filter_and_transform_intervention(interv, opt_start, opt_end):
 
     Retourne un dictionnaire structuré selon les spécifications ou None si le rendez-vous est exclu.
     """
+
     # --- 1. Déterminer la plage de date pertinente selon le statut ---
     statusrv = interv.get("statusrv", "").lower()
     if statusrv in ["proposé", "convenu"]:
         # Si modifiable, on utilise daterv et datervfin
-        date_debut_str = interv.get("daterv")
-        date_fin_str   = interv.get("datervfin")
+        date_debut_val = interv.get("daterv")
+        date_fin_val   = interv.get("datervfin")
         modifiable = 0
         # Pour l'affectation des ressources, on utilisera "users"
-        ressources = interv.get("users", [])
+        ressources = [user.get("id") for user in interv.get("user", [])]
     else:
         # Sinon, utiliser datevoulueclientde et datevoulueclienta
-        date_debut_str = interv.get("datevoulueclientde")
-        date_fin_str   = interv.get("datevoulueclienta")
+        date_debut_val = interv.get("datevoulueclientde")
+        date_fin_val   = interv.get("datevoulueclienta")
+        # Si les dates sont absentes ou vides, on utilise la plage d'optimisation
+        if not date_debut_val or (isinstance(date_debut_val, str) and not date_debut_val.strip()):
+            date_debut_val = opt_start
+        if not date_fin_val or (isinstance(date_fin_val, str) and not date_fin_val.strip()):
+            date_fin_val = opt_end
         modifiable = 1
         # Pour l'affectation des ressources, on utilisera "user_recommanded"
-        ressources = interv.get("user_recommanded", [])
+        if interv.get("user_recommanded") :
+            ressources = [user.get("id") for user in interv.get("user_recommanded", [])]
+        else :
+            ressources=get_poseur_ids()
 
-    # Convertir les dates en objets datetime
-    try:
-        # On suppose que les dates sont en ISO 8601
-        rdv_start = datetime.fromisoformat(date_debut_str)
-        rdv_end   = datetime.fromisoformat(date_fin_str)
-    except Exception as e:
-        print(f"Erreur de conversion de date pour l'intervention {interv.get('id')}: {e}")
+    # --- 2. Conversion des dates en objets datetime ---
+    rdv_start = to_datetime(date_debut_val)
+    rdv_end   = to_datetime(date_fin_val)
+
+    if rdv_start is None or rdv_end is None:
+        print(f"Erreur: Impossible de convertir les dates pour l'intervention {interv.get('id')}.")
         return None
 
-    # --- 2. Vérifier l'intersection de l'intervalle du rendez-vous avec la plage d'optimisation ---
-    # On considère qu'il y a intersection si rdv_end >= opt_start et rdv_start <= opt_end
+    # --- 3. Vérifier l'intersection de l'intervalle du rendez-vous avec la plage d'optimisation ---
     if rdv_end < opt_start or rdv_start > opt_end:
         return None  # Pas d'intersection
 
-    # --- 3. Filtrage sur le contrôle des supports ---
-    control = interv.get("control", "")
-    if control not in ["Validé", "Validé à distance"]:
-        return None
+    # --- 4. (Filtrage sur le contrôle des supports peut être ajouté ici) ---
 
-    # --- 4. Filtrage sur l'accessibilité du chantier ---
-    access_ask = interv.get("access_ask")
-    if not access_ask:
-        return None
+    # --- 5. (Filtrage sur l'accessibilité du chantier peut être ajouté ici) ---
 
-    # --- 5. Filtrage sur les marchandises ---
+    # --- 6. Filtrage sur les marchandises ---
     marchandises = interv.get("marchandises", [])
-    effective_start = rdv_start  # On pourra potentiellement modifier la date de début
+    effective_start = rdv_start  # La date de début effective initiale est celle du rendez-vous
     if marchandises:
         for march in marchandises:
-            # Récupérer le statut de la marchandise (dans l'objet statusmarchandise, le champ "nom")
             status_march = march.get("statusmarchandise", {}).get("nom", "")
             if status_march in ["Réceptionné", "Livré"]:
-                # OK pour cette marchandise
                 continue
             elif status_march == "Commandé":
-                # Comparer la dateARC à la plage d'optimisation
-                dateARC_str = march.get("dateARC")
-                try:
-                    dateARC = datetime.fromisoformat(dateARC_str)
-                except Exception as e:
-                    print(f"Erreur de conversion de dateARC: {e}")
+                dateARC_val = march.get("dateARC")
+                dateARC = to_datetime(dateARC_val)
+                if dateARC is None and statusrv not in ["proposé", "convenu"]:
+                    print(f"Erreur de conversion de dateARC pour l'intervention {interv.get('id')}.")
                     return None
-                # Si dateARC > date de fin de la plage => exclure le rendez-vous
-                if dateARC > opt_end:
+                # Pour comparer, on rend les datetime naïfs
+                dateARC_naive = dateARC.replace(tzinfo=None) if dateARC.tzinfo else dateARC
+                opt_end_naive = opt_end.replace(tzinfo=None) if opt_end.tzinfo else opt_end
+                if dateARC_naive > opt_end_naive and statusrv not in ["proposé", "convenu"]:
                     return None
-                # Si dateARC est supérieure à l'actuelle date de début, on met à jour effective_start
-                if dateARC > effective_start and dateARC <= opt_end:
-                    effective_start = dateARC
+                if dateARC_naive > effective_start and dateARC_naive <= opt_end_naive:
+                    effective_start = dateARC_naive
             else:
-                # Statut non acceptable
                 return None
 
-    # --- 6. Transformation de l'intervention dans le format de sortie ---
-    # Extraire la liste des noms des ressources
-    affectation = [r.get("username") for r in ressources if "username" in r]
-
-    # Choisir les dates à renvoyer (en format ISO 8601)
-    # Si la date effective_start a été modifiée par un dateARC, l'utiliser
+    # --- 7. Transformation de l'intervention dans le format de sortie ---
+    
     final_date_debut = effective_start.isoformat()
     final_date_fin   = rdv_end.isoformat()
 
-    # Construire l'objet de sortie
+    # --- 8. Filtre des rendez vous nous complétés ---
+    gps = get_gps(interv.get("chantier", {}).get("id"))
+    if not interv.get("nb_intervenants_mandatory") :
+        nb_intervenants=1
+    else:
+        nb_intervenants=interv.get("nb_intervenants_mandatory")
+    if (not gps or not interv.get("duree")) and statusrv not in ["proposé", "convenu"]:
+        return None
+    
     output = {
-        "rdv": {
             "id_rdv": interv.get("id"),
             "modifiable": modifiable,
             "duree": interv.get("duree"),
-            "nombre_ressources": interv.get("nb_intervenants_mandatory"),
-            "coordonnees_gps": interv.get("chantier", {}).get("gps"),
-            "affectation_ressources": affectation,
+            "nombre_ressources": nb_intervenants,
+            "coordonnees_gps": gps,
+            "affectation_ressources": ressources,
             "date_debut": final_date_debut,
             "date_fin": final_date_fin
         }
-    }
     return output
+
+
 
 def optimisationTournee_tri(data):
     """
@@ -231,15 +256,19 @@ def optimisationTournee_tri(data):
     opt_end = add_workdays(opt_start, nb_jours)
 
     # 2. Appel à l'API du DISC
-    interventions = call_disc_api(opt_start, opt_end)
+
+    jours_interventions = call_disc_api(opt_start, opt_end)
+    
+
 
     # 3. Filtrage et transformation
     output_list = []
-    for interv in interventions:
-        transformed = filter_and_transform_intervention(interv, opt_start, opt_end)
-        if transformed:
-            output_list.append(transformed)
-
+    for jour in jours_interventions :
+        rvs = jour.get("rvs")
+        for interv in rvs:
+            transformed = filter_and_transform_intervention(interv, opt_start, opt_end)
+            if transformed:
+                output_list.append(transformed)
     return output_list
 
 # Pour tester localement la fonction (optionnel)

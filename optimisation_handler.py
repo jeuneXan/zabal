@@ -14,7 +14,6 @@ def run_optimisation(data):
     # Étape 1 : Tri des données
     print("lancement tri")
     sorted_data = optimisationTournee_tri(data)
-    print("voici les données à opitmiser",sorted_data)
     # Étape 2 : Application de l'algorithme d'optimisation sur les données triées
     print("lancement optimize")
     nb_days = data.get("nbJours")
