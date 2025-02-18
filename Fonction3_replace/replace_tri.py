@@ -13,14 +13,19 @@ def preparer_donnees_optimisation():
 
     # Identifier les derniers rendez-vous des poseurs
     dernier_rdv_poseur = {}
-    for rdv in rendez_vous:
-        for poseur in rdv["affectation_ressources"]:
-            date_rdv = datetime.fromisoformat(rdv["date_debut"][:-1])
-            if poseur not in dernier_rdv_poseur or date_rdv > dernier_rdv_poseur[poseur]["date_debut"]:
-                dernier_rdv_poseur[poseur] = {
-                    "coordonnees_gps": rdv["coordonnees_gps"],
-                    "date_debut": date_rdv
-                }
+    for jour in rendez_vous:
+        rdvs = jour["rvs"]
+        for rdv in rdvs:
+            print (rdv)
+            for poseur in rdv["users"]:
+                print(poseur["username"])
+                date_rdv = datetime.fromisoformat(rdv["daterv"].split("+")[0])
+                print(date_rdv)
+                if poseur["username"] not in dernier_rdv_poseur or date_rdv > dernier_rdv_poseur[poseur["username"]]["daterv"]:
+                    dernier_rdv_poseur[poseur] = {
+                        "coordonnees_gps": rdv.get("chantier", {}).get("gps", ""),
+                        "date_debut": date_rdv
+                    }
 
     # Identifier les rendez-vous annulés
     annulations = [
