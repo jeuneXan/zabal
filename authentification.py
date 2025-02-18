@@ -29,7 +29,6 @@ def login_to_api():
         return None
 
     csrf_token = match.group(1)
-    print(f"✅ Jeton CSRF récupéré : {csrf_token}")
 
     # 2️⃣ Étape 2 : Faire la requête de login avec le jeton CSRF
     login_data = {
@@ -44,7 +43,6 @@ def login_to_api():
     # Vérification de la connexion
     if response.status_code in [302, 200]:  # 302 = redirection après connexion réussie
         print("✅ Connexion réussie !")
-        print("📡 Cookies après connexion :", session.cookies.get_dict())
     else:
         print(f"❌ Erreur de connexion ({response.status_code}) : {response.text}")
         return None

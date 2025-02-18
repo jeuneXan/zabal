@@ -15,18 +15,14 @@ def charger_rendez_vous(fichier="data/rendez_vous.json"):
     
     # URL de l’API pour récupérer les rendez-vous
     base_url = os.environ.get("API_URL", "https://preprod.disc-chantier.com")
-    endpoint = "/api/rvinterventions"  # Modifier si nécessaire
+    endpoint = "/api/rvinterventions/by-dates?datestart=13/02/2025&dateend=20/02/2025"  # Modifier si nécessaire
     url = f"{base_url}{endpoint}"
-
-    print(f"📡 Récupération des rendez-vous depuis {url}...")
 
     try:
         # Obtenir la session API authentifiée
         session = get_api_session()
-        print("📡 Envoi de la requête avec le cookie :", session.cookies.get_dict())
         # Faire la requête GET pour récupérer les rendez-vous
         response = session.get(url)
-        print(f"🔎 Réponse brute de l'API : {response.text}")  # Ajout pour debug
         response.raise_for_status()  # Gère les erreurs HTTP
 
         interventions = response.json()
