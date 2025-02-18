@@ -17,10 +17,11 @@ import json
 from datetime import datetime, date, timedelta
 from collections import defaultdict
 from copy import deepcopy
+from dateutil.parser import parse
 
 from utils import to_datetime
 
-# Import OR-Tools
+# Import OR‑Tools
 from ortools.constraint_solver import routing_enums_pb2
 from ortools.constraint_solver import pywrapcp
 
@@ -95,6 +96,7 @@ def optimize_period_routing(appointments, day_date, period_start, period_end, ve
     pour les rendez‑vous planifiés dans cette période.
     Seuls les rendez‑vous entièrement planifiés (toutes copies visitées) sont retournés.
     """
+    print("appointments", appointments)
     period_duration = period_end - period_start
     # Structure pour stocker les nœuds du modèle.
     nodes = []
@@ -116,28 +118,31 @@ def optimize_period_routing(appointments, day_date, period_start, period_end, ve
     
     # Pour chaque rendez‑vous de la liste
     for rdv in appointments:
-        # Convertir les dates avec to_datetime
+        # Conversion des dates avec to_datetime
         rdv_start_dt = to_datetime(rdv["date_debut"])
-        rdv_end_dt   = to_datetime(rdv["date_fin"])
+        rdv_end_dt = to_datetime(rdv["date_fin"]) - timedelta(minutes=1)
         if rdv_start_dt is None or rdv_end_dt is None:
             print(f"Erreur de conversion des dates pour rdv id {rdv['id_rdv']}")
             continue
 
         # Vérifier que le rendez‑vous concerne bien la journée en cours
         if rdv_start_dt.date() != day_date:
+            print("datedif")
             continue
         
         # Calculer la fenêtre souhaitée en minutes depuis minuit
         desired_lower = time_to_minutes(rdv_start_dt)
         desired_upper = time_to_minutes(rdv_end_dt)
-        
+        print("desired_lower", desired_lower, "desired_upper", desired_upper)
         # Intersection avec la période
         lower_bound = max(desired_lower, period_start)
         upper_bound = min(desired_upper, period_end)
+        print("lower_bound", lower_bound, "upper_bound", upper_bound)
         if lower_bound > upper_bound:
+            print("bound")
             continue
         
-        # Pour un rendez‑vous non modifiable, fenêtre très étroite
+        # Pour un rendez‑vous non modifiable, on fixe une fenêtre très étroite
         if rdv["modifiable"] == 0:
             tw_lower = lower_bound - period_start
             tw_upper = tw_lower + 1  # fenêtre d'une minute
@@ -145,7 +150,7 @@ def optimize_period_routing(appointments, day_date, period_start, period_end, ve
             tw_lower = lower_bound - period_start
             tw_upper = upper_bound - period_start
 
-        # Récupérer la durée du rendez‑vous (conversion en entier si nécessaire)
+        # Récupérer la durée du rendez‑vous
         service_time = int(rdv["duree"])
         
         # Pour les coordonnées
@@ -162,9 +167,10 @@ def optimize_period_routing(appointments, day_date, period_start, period_end, ve
             allowed = rdv["affectation_ressources"]
         allowed_vehicle_indices = [i for i, emp in enumerate(vehicles) if emp in allowed]
         if not allowed_vehicle_indices:
+            print("not allowed vehicle")
             continue
         
-        # Nombre de copies à créer
+        # Nombre de copies à créer (pour les rendez‑vous multi‑ressources)
         nb_copies = rdv.get("nombre_ressources", 1)
         for copy in range(nb_copies):
             node = {
@@ -195,7 +201,7 @@ def optimize_period_routing(appointments, day_date, period_start, period_end, ve
             coord_j = nodes[j]["coord"] if not nodes[j].get("is_depot", False) else DEPOT_COORDINATES
             time_matrix[i][j] = travel_time(coord_i, coord_j)
     
-    # Préparer le data_model pour OR-Tools
+    # Préparer le data_model pour OR‑Tools
     data = {
         'time_matrix': time_matrix,
         'service_times': [node["service_time"] for node in nodes],
@@ -205,7 +211,7 @@ def optimize_period_routing(appointments, day_date, period_start, period_end, ve
         'depot': 0
     }
     
-    # Création du modèle Routing OR-Tools
+    # Création du modèle Routing OR‑Tools
     manager = pywrapcp.RoutingIndexManager(len(data['time_matrix']),
                                            data['num_vehicles'], data['depot'])
     routing = pywrapcp.RoutingModel(manager)
@@ -270,9 +276,10 @@ def optimize_period_routing(appointments, day_date, period_start, period_end, ve
     if not solution:
         print(f"Aucune solution trouvée pour la période {period_start}-{period_end} le {day_date}")
         return {}
+    print("solution", solution)
     
-    # Extraction des résultats
-    result = defaultdict(lambda: {"scheduled_start": None, "assigned_resources": []})
+    # Extraction des résultats avec déduplication
+    result = defaultdict(lambda: {"scheduled_start": None, "assigned_resources": set()})
     visited_nodes = set()
     for veh in range(data['num_vehicles']):
         index = routing.Start(veh)
@@ -284,27 +291,41 @@ def optimize_period_routing(appointments, day_date, period_start, period_end, ve
                 scheduled_relative = solution.Value(t_var)
                 scheduled_absolute = period_start + scheduled_relative  # minutes depuis minuit
                 rdv_id, copy_index = node_metadata[node]
-                result[rdv_id]["assigned_resources"].append(vehicles[veh])
+                result[rdv_id]["assigned_resources"].add(vehicles[veh])
                 result[rdv_id]["scheduled_start"] = scheduled_absolute
             index = solution.Value(routing.NextVar(index))
     
-    # Vérification pour rendez‑vous multi‑ressources
+    # Conversion de l'ensemble en liste pour chaque rendez‑vous
+    for rdv_id in result:
+        result[rdv_id]["assigned_resources"] = list(result[rdv_id]["assigned_resources"])
+    
+    # Correction : limiter le nombre de ressources assignées au nombre requis
+    # On parcourt les rendez‑vous de la période et on ne garde que le nombre de ressources indiqué par "nombre_ressources"
+    for rdv in appointments:
+        rid = rdv["id_rdv"]
+        if rid in result:
+            required = int(rdv.get("nombre_ressources", 1))
+            if len(result[rid]["assigned_resources"]) > required:
+                result[rid]["assigned_resources"] = result[rid]["assigned_resources"][:required]
+    
+    # Vérification pour rendez‑vous multi‑ressources : supprimer ceux dont toutes les copies n'ont pas été visitées
     for rdv_id, node_indices in multi_resource_groups.items():
         all_visited = all(n in visited_nodes for n in node_indices)
         if not all_visited and rdv_id in result:
+            print("del multi ressource")
             del result[rdv_id]
     
     return result
 
 # --------------------------
-# OPTIMISATION SUR LA HORIZON (PLUSIEURS JOURS)
+# OPTIMISATION SUR L'HORIZON (PLUSIEURS JOURS)
 # --------------------------
 def optimize_schedule(appointments, nb_days):
     """
     Optimise le planning sur nb_days jours (du jour courant jusqu'à aujourd'hui + nb_days),
     en considérant uniquement les jours travaillés (lundi à vendredi).
-    
-    appointments : liste de dictionnaires correspondant aux rendez‑vous
+
+    appointments : liste de dictionnaires correspondant aux rendez‑vous.
     Retourne une liste (de dictionnaires JSON) contenant uniquement les rendez‑vous modifiés,
     avec mise à jour des champs "date_debut", "date_fin" et "affectation_ressources".
     """
@@ -312,8 +333,10 @@ def optimize_schedule(appointments, nb_days):
     vehicles_set = set()
     for rdv in appointments:
         for emp in rdv["affectation_ressources"]:
+            print("emp", emp)
             vehicles_set.add(emp)
     vehicles = sorted(list(vehicles_set))
+    print("vehicles", vehicles)
     
     # Copier les rendez‑vous pour modifier sans altérer l'original
     appointments_mod = deepcopy(appointments)
@@ -338,7 +361,6 @@ def optimize_schedule(appointments, nb_days):
         for period_name, p_start, p_end in periods:
             eligible_rdvs = []
             for rdv in appointments_mod:
-                # Conversion de date_debut en datetime
                 rdv_dt = to_datetime(rdv["date_debut"])
                 if rdv_dt is None:
                     continue
@@ -352,9 +374,10 @@ def optimize_schedule(appointments, nb_days):
                     eligible_rdvs.append(rdv)
             if not eligible_rdvs:
                 continue
-            
             result = optimize_period_routing(eligible_rdvs, day, p_start, p_end, vehicles)
+            print("result", result)
             for rdv in eligible_rdvs:
+                print("rdv", rdv)
                 rid = rdv["id_rdv"]
                 if rid in result:
                     scheduled_start = result[rid]["scheduled_start"]  # minutes depuis minuit
@@ -370,3 +393,30 @@ def optimize_schedule(appointments, nb_days):
                         updated_rdvs[rid] = rdv
         days_processed += 1
     return list(updated_rdvs.values())
+
+# --------------------------
+# EXEMPLE D'UTILISATION
+# --------------------------
+
+'''
+if __name__ == "__main__":
+    # Exemple de rendez‑vous (les données peuvent être chargées depuis un fichier JSON, par exemple)
+    appointments = [
+        {
+            "id_rdv": 11673,
+            "modifiable": 1,
+            "duree": "16",
+            "nombre_ressources": 1,
+            "coordonnees_gps": "43.481930, -1.518339",
+            "affectation_ressources": [22, 23, 24, 28, 30, 36, 38, 39, 41, 42, 46, 47, 52, 53, 54, 55, 57, 58, 60, 61, 64, 69, 70, 71, 74, 76, 77, 78, 79, 86],
+            "date_debut": "2025-02-18T00:00:00",
+            "date_fin": "2025-02-19T00:00:00"
+        },
+        # ... Ajoutez d'autres rendez‑vous si nécessaire
+    ]
+    
+    nb_days = 1
+    modified_appointments = optimize_schedule(appointments, nb_days)
+    print("Rendez‑vous modifiés :")
+    print(json.dumps(modified_appointments, indent=4))
+'''

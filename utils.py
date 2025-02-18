@@ -1,4 +1,5 @@
 from datetime import datetime, timedelta
+from dateutil.parser import parse
 
 def to_datetime(val):
         # Si val est déjà un datetime, le retourner tel quel
