@@ -5,7 +5,7 @@ from pydantic import BaseModel, conint, constr, root_validator
 from datetime import datetime
 
 # Importer la fonction de traitement d'optimisation
-from optimisation_handler import run_optimisation
+from Fonction1_Optimisation.optimisation_handler import run_optimisation
 
 app = FastAPI()
 

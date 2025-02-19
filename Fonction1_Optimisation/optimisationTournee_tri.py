@@ -94,7 +94,7 @@ def get_gps(idChantier):
 
 def call_disc_api(date_start: datetime, date_end: datetime):
     base_url = os.environ.get("API_URL", "https://preprod.disc-chantier.com")
-    endpoint = "/api/rvinterventions/by-dates?datestart=17/02/2025&dateend=17/02/2025"  # Modifier si nécessaire
+    endpoint = "/api/rvinterventions/by-dates?datestart=25/02/2025&dateend=25/02/2025"  # Modifier si nécessaire
     url = f"{base_url}{endpoint}"
 
 
