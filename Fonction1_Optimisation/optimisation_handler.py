@@ -1,6 +1,6 @@
 # optimisation_handler.py
-from optimisationTournee_tri import optimisationTournee_tri
-from optimisationTournee_algo import optimize_schedule
+from Fonction1_Optimisation.optimisationTournee_tri import optimisationTournee_tri
+from Fonction1_Optimisation.optimisationTournee_algo import optimize_schedule
 
 def run_optimisation(data):
     """

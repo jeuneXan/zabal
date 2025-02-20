@@ -1,6 +1,6 @@
 # optimisation_handler.py
-from optimisationTournee_tri import optimisationTournee_tri
-from optimisationTournee_algo import optimize_schedule
+from Fonction2_nvAffectation.nvAffectation_tri import nvAffectation_tri
+from Fonction2_nvAffectation.nvAffectation_algo import reaffecter_rdv
 
 def run_nvAffectation(data):
     """
@@ -15,9 +15,14 @@ def run_nvAffectation(data):
     print("lancement tri")
     sorted_data = nvAffectation_tri(data)
     # Étape 2 : Application de l'algorithme d'optimisation sur les données triées
-    print("lancement optimize")
-    nb_days = data.get("nbJours")
-    result = optimize_schedule(sorted_data, nb_days)
+    employe_absent = data.get("employeAbsent")
+    print("employe", employe_absent)
+    data_for_algo = {
+        "sorted_data": sorted_data,
+        "employe_absent": employe_absent
+    }
+    print("lancement algo", data_for_algo)
+    result = reaffecter_rdv(data_for_algo)
     
     print(result)
     return result

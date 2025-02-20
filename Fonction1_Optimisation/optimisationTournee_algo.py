@@ -18,6 +18,7 @@ from datetime import datetime, date, timedelta
 from collections import defaultdict
 from copy import deepcopy
 from dateutil.parser import parse
+from utils import haversine_distance
 
 from utils import to_datetime
 
@@ -53,17 +54,6 @@ def parse_gps(coord_str):
     """Convertit une chaîne 'lat, lon' en tuple de floats."""
     lat_str, lon_str = coord_str.split(',')
     return float(lat_str.strip()), float(lon_str.strip())
-
-def haversine_distance(coord1, coord2):
-    """Calcule la distance (en km) entre deux points (lat, lon) avec la formule de Haversine."""
-    R = 6371  # Rayon de la Terre en km
-    lat1, lon1 = math.radians(coord1[0]), math.radians(coord1[1])
-    lat2, lon2 = math.radians(coord2[0]), math.radians(coord2[1])
-    dlat = lat2 - lat1
-    dlon = lon2 - lon1
-    a = math.sin(dlat/2)**2 + math.cos(lat1)*math.cos(lat2)*math.sin(dlon/2)**2
-    c = 2 * math.atan2(math.sqrt(a), math.sqrt(1 - a))
-    return R * c
 
 def travel_time(coord1, coord2, speed_kmh=50):
     """Calcule le temps de trajet (en minutes) entre deux points en utilisant une vitesse moyenne."""

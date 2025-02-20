@@ -6,6 +6,7 @@ from datetime import datetime
 
 # Importer la fonction de traitement d'optimisation
 from Fonction1_Optimisation.optimisation_handler import run_optimisation
+from Fonction2_nvAffectation.nvAffectation_handler import run_nvAffectation
 
 app = FastAPI()
 
@@ -71,11 +72,9 @@ async def optimisation(request_data: OptimizationRequest):
 
 @app.post("/remplacement-ressource")
 async def remplacement_ressource(request_data: ResourceReplacementRequest):
-    print(
-        f"Remplacement de la ressource pour l'employé {request_data.employeAbsent} "
-        f"du {request_data.dateDebut} au {request_data.dateFin}."
-    )
-    return {"fonctionLancee": 1, "message": "Tout est OK"}
+    input_data = request_data.dict()
+    result = run_nvAffectation(input_data)
+    return {"fonctionLancee": 1, "message": "Tout est OK", "result": result}
 
 @app.post("/remplacement-rdv")
 async def remplacement_rdv(request_data: AppointmentReplacementRequest):
@@ -87,7 +86,3 @@ async def remplacement_rdv(request_data: AppointmentReplacementRequest):
         f"Créneau : position avant {request_data.positionAvant}, position après {request_data.positionApres}."
     )
     return {"fonctionLancee": 1, "message": "Tout est OK"}
-
-if __name__ == '__main__':
-    import uvicorn
-    uvicorn.run("api:app", host="127.0.0.1", port=8000, reload=True)

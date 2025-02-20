@@ -134,7 +134,7 @@ def filter_and_transform_intervention(interv, opt_start, opt_end):
         date_fin_val   = interv.get("datervfin")
         modifiable = 0
         # Pour l'affectation des ressources, on utilisera "users"
-        ressources = [user.get("id") for user in interv.get("user", [])]
+        ressources = [user.get("id") for user in interv.get("users", [])]
     else:
         # Sinon, utiliser datevoulueclientde et datevoulueclienta
         date_debut_val = interv.get("datevoulueclientde")
