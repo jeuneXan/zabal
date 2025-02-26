@@ -1,53 +1,81 @@
 import os
 from datetime import datetime
-from replace_tri import preparer_donnees_optimisation
-from replace_algo import optimiser_affectation_poseurs
+from replace_tri import (
+    preparer_donnees_remplacement,
+    filtrer_phase1,
+    filtrer_phase2,
+    filtrer_phase2b,
+    filtrer_phase2c
+)
+from replace_algo import optimiser_affectation_poseurs, optimiser_affectation_multi
 
-def run_optimisation_A(employe: str = None, date_debut: str = None, date_fin: str = None):
+def run_optimisation_remplacement(rdv_id: str):
     """
-    Exécute l'optimisation des poseurs.
-    
-    Paramètres :
-      - employe (str) : Nom de l'employé concerné (optionnel)
-      - date_debut (str) : Date de début de la période à optimiser (format ISO)
-      - date_fin (str) : Date de fin de la période à optimiser (format ISO)
-    
-    Retourne :
-      - Une liste des affectations optimisées.
+    Approche multi-phase :
+      1) PHASE 1 : RDV unique (même durée, équipe identique).
+      2) PHASE 2 : RDV unique (même durée, même nb poseurs, >=1 poseur commun).
+      2.5) PHASE 2.5 : RDV unique (même durée, même nb poseurs, >=1 poseur dans recommandés).
+      2.6) PHASE 2.6 : RDV unique (même durée, même nb poseurs, sans contrainte de composition).
+      3) PHASE 3 : décomposition multi-rdv (même ou plus courte durée).
     """
-    print("🚀 Lancement de l'optimisation des affectations de poseurs")
 
-    # Étape 1 : Charger et filtrer les données
-    poseurs_libres, candidats = preparer_donnees_optimisation()
-    
-    if not poseurs_libres or not candidats:
-        print("⚠️ Aucune donnée à optimiser")
-        return {"message": "Aucune donnée à optimiser", "affectations": []}
+    # Récupération de l'équipe annulée, la durée, etc.
+    poseurs_libres, candidats, rdv_annule = preparer_donnees_remplacement(rdv_id)
+    if not rdv_annule or not poseurs_libres:
+        return {
+            "message": f"Aucun remplacement possible (RDV {rdv_id} introuvable ou poseurs inexistants)",
+            "affectations": []
+        }
 
-    # Étape 2 : Filtrer selon les paramètres API (si fournis)
-    if employe:
-        poseurs_libres = [p for p in poseurs_libres if p["poseur"] == employe]
-    if date_debut:
-        date_debut = datetime.fromisoformat(date_debut)
-        candidats = [c for c in candidats if datetime.fromisoformat(c["date_debut"][:-1]) >= date_debut]
-    if date_fin:
-        date_fin = datetime.fromisoformat(date_fin)
-        candidats = [c for c in candidats if datetime.fromisoformat(c["date_fin"][:-1]) <= date_fin]
+    # PHASE 1
+    phase1_candidates = filtrer_phase1(rdv_annule, candidats)
+    if phase1_candidates:
+        result1 = optimiser_affectation_poseurs(
+            poseurs_libres, phase1_candidates, rdv_annule, phase_name="PHASE 1"
+        )
+        if result1:
+            return {"message": "Remplacement terminé (Phase 1)", "affectations": result1}
 
-    # Étape 3 : Lancer l’optimisation
-    resultats = optimiser_affectation_poseurs(poseurs_libres, candidats)
+    # PHASE 2
+    phase2_candidates = filtrer_phase2(rdv_annule, candidats)
+    if phase2_candidates:
+        result2 = optimiser_affectation_poseurs(
+            poseurs_libres, phase2_candidates, rdv_annule, phase_name="PHASE 2"
+        )
+        if result2:
+            return {"message": "Remplacement terminé (Phase 2)", "affectations": result2}
+
+    # PHASE 2.5
+    phase2b_candidates = filtrer_phase2b(rdv_annule, candidats)
+    if phase2b_candidates:
+        result2b = optimiser_affectation_poseurs(
+            poseurs_libres, phase2b_candidates, rdv_annule, phase_name="PHASE 2.5"
+        )
+        if result2b:
+            return {"message": "Remplacement terminé (Phase 2.5)", "affectations": result2b}
+
+    # PHASE 2.6
+    phase2c_candidates = filtrer_phase2c(rdv_annule, candidats)
+    if phase2c_candidates:
+        result2c = optimiser_affectation_poseurs(
+            poseurs_libres, phase2c_candidates, rdv_annule, phase_name="PHASE 2.6"
+        )
+        if result2c:
+            return {"message": "Remplacement terminé (Phase 2.6)", "affectations": result2c}
+
+    # PHASE 3
+    if len(poseurs_libres) > 1:
+        result3 = optimiser_affectation_multi(poseurs_libres, candidats, rdv_annule)
+        if result3:
+            return {"message": "Remplacement terminé (Phase 3, multi-rdv)", "affectations": result3}
 
     return {
-        "message": "Optimisation terminée",
-        "affectations": resultats
+        "message": "Aucun remplacement possible (Toutes phases échouées)",
+        "affectations": []
     }
 
-if __name__ == "__main__":
-    # Simulation d'un jeu de données statique pour tester la fonction A
-    print("🔬 Test local de la fonction A avec des données statiques...")
 
-    # Appel de l'optimisation sans filtre spécifique
-    result = run_optimisation_A()
-    
-    print("✅ Résultats de l'optimisation :")
-    print(result)
+if __name__ == "__main__":
+    test_id = "12424"
+    output = run_optimisation_remplacement(test_id)
+    print(output)

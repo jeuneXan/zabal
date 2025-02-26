@@ -1,74 +1,163 @@
-from datetime import datetime
-from replace_utils import charger_rendez_vous, jours_ouvres, distance_moyenne_avec_poseurs
+from datetime import datetime, timedelta
+from replace_utils import charger_rendez_vous
 
-def preparer_donnees_optimisation():
-    """Charge et trie les rendez-vous avant optimisation."""
-    print("✅ Préparation des données pour l'optimisation")
+def preparer_donnees_remplacement(rdv_id: str):
+    """
+    Récupère tous les RDV,
+    Trouve le RDV annulé (rdv_id),
+    Extrait la date, la durée, et l'équipe.
+    Construit la liste (poseurs_libres, candidats).
+    
+    Renvoie :
+      - poseurs_libres : [{"poseur": name, "date_disponible": date_annulation}, ...]
+      - candidats : tous les RDV potentiels dans les 7 jours
+      - rdv_annule : le RDV annulé lui-même
+    """
+    print(f"Préparation des données pour le RDV annulé {rdv_id}")
 
-    today = datetime.today().date()
-    jours_a_considerer = jours_ouvres(today, 4)
-    rendez_vous = charger_rendez_vous()
+    all_rdv = charger_rendez_vous()
+    if not all_rdv:
+        print("Aucun RDV récupéré depuis la source.")
+        return [], [], None
 
-    print(f"📂 {len(rendez_vous)} rendez-vous chargés !")
+    rdv_annule = None
+    for jour_data in all_rdv:
+        for rdv in jour_data.get("rvs", []):
+            if str(rdv.get("id")) == rdv_id:
+                rdv_annule = rdv
+                break
+        if rdv_annule:
+            break
 
-    # Identifier les derniers rendez-vous des poseurs
-    dernier_rdv_poseur = {}
-    for jour in rendez_vous:
-        rdvs = jour["rvs"]
-        for rdv in rdvs:
-            print (rdv)
-            for poseur in rdv["users"]:
-                print(poseur["username"])
-                date_rdv = datetime.fromisoformat(rdv["daterv"].split("+")[0])
-                print(date_rdv)
-                if poseur["username"] not in dernier_rdv_poseur or date_rdv > dernier_rdv_poseur[poseur["username"]]["daterv"]:
-                    dernier_rdv_poseur[poseur] = {
-                        "coordonnees_gps": rdv.get("chantier", {}).get("gps", ""),
-                        "date_debut": date_rdv
-                    }
+    if not rdv_annule:
+        print(f"RDV {rdv_id} introuvable dans les données.")
+        return [], [], None
 
-    # Identifier les rendez-vous annulés
-    annulations = [
-        rdv for rdv in rendez_vous
-        if rdv["statut"] == "annulé" and datetime.fromisoformat(rdv["date_debut"][:-1]).date() in jours_a_considerer
-    ]
+    # Affiche rapidement le RDV annulé
+    print("RDV annulé :", rdv_annule)
 
-    print(f"❌ {len(annulations)} rendez-vous annulés détectés !")
+    # Extraire la date d'annulation
+    daterv_str = rdv_annule.get("daterv", "")
+    if not daterv_str:
+        return [], [], None
+    date_annulation = datetime.fromisoformat(daterv_str.split("+")[0]).date()
 
-    # Extraire les poseurs devenus libres
+    # Gérer la durée
+    duree_annule = rdv_annule.get("duree", "")
+    if not duree_annule:
+        duree_annule = "1"
+
+    # Récupérer les poseurs
+    poseurs_concernes = [u["username"] for u in rdv_annule.get("users", [])]
+
+    # Si tous sont "À planifier", on ne fait rien
+    if all(p == "À planifier" for p in poseurs_concernes):
+        print("Tous les poseurs sont 'À planifier', aucune optimisation à faire.")
+        return [], [], None
+
     poseurs_libres = [
-        {"poseur": poseur, "date_disponible": datetime.fromisoformat(annulation["date_debut"][:-1]).date()}
-        for annulation in annulations
-        for poseur in annulation["affectation_ressources"]
+        {"poseur": p, "date_disponible": date_annulation} 
+        for p in poseurs_concernes
     ]
 
-    print(f"📌 {len(poseurs_libres)} poseurs sont disponibles suite aux annulations.")
-
-    # Trouver les candidats pour remplacement
+    # Construire la liste des RDV candidats (dans les 7 jours)
+    date_limite = date_annulation + timedelta(days=7)
     candidats_filtres = []
-    for annulation in annulations:
-        date_annulation = datetime.fromisoformat(annulation["date_debut"][:-1]).date()
-        candidats_valides = [
-            rdv for rdv in rendez_vous
-            if rdv["statut"] == "proposé" and datetime.fromisoformat(rdv["date_debut"][:-1]).date() > date_annulation
-        ]
-        print(f"📌 {len(candidats_valides)} candidats valides pour remplacer {annulation['nom']} ({annulation['id_rdv']})")
-        candidats_filtres.extend(candidats_valides)
+    for jour_data in all_rdv:
+        for rdv in jour_data.get("rvs", []):
+            if str(rdv.get("id")) == str(rdv_annule["id"]):
+                continue
+            dt_str = rdv.get("daterv", "")
+            if not dt_str:
+                continue
+            dt_rdv = datetime.fromisoformat(dt_str.split("+")[0]).date()
+            if date_annulation <= dt_rdv <= date_limite:
+                candidats_filtres.append(rdv)
 
-    # Supprimer les doublons
-    candidats = list({rdv["id_rdv"]: rdv for rdv in candidats_filtres}.values())
+    print(f"{len(candidats_filtres)} RDV candidats dans la fenêtre de 7 jours.")
+    return poseurs_libres, candidats_filtres, rdv_annule
 
-    # Trier les candidats par critères
-    candidats.sort(
-        key=lambda x: (
-            distance_moyenne_avec_poseurs(x, dernier_rdv_poseur),
-            (not x["marchandise"] or x["marchandise_livree"]),
-            x["duree"],
-            -len(x["affectation_ressources"])
-        )
-    )
 
-    print(f"📌 {len(candidats)} candidats finaux après tri.")
+# ------------------------------
+# Fonctions de filtrage par phase
+# ------------------------------
 
-    # Retourner les données triées
-    return poseurs_libres, candidats
+def filtrer_phase1(rdv_annule, candidats):
+    """
+    PHASE 1 : même durée, même équipe.
+    """
+    duree_annule = rdv_annule.get("duree", "1")
+    users_annule = {u["username"] for u in rdv_annule.get("users", [])}
+    
+    phase1 = []
+    for c in candidats:
+        if c.get("duree") == duree_annule:
+            users_c = {u["username"] for u in c.get("users", [])}
+            if users_c == users_annule:
+                phase1.append(c)
+    return phase1
+
+
+def filtrer_phase2(rdv_annule, candidats):
+    """
+    PHASE 2 : même durée, même nb poseurs, >=1 poseur en commun.
+    """
+    duree_annule = rdv_annule.get("duree", "1")
+    users_annule = [u["username"] for u in rdv_annule.get("users", [])]
+    nb_annule = len(users_annule)
+    set_annule = set(users_annule)
+
+    phase2 = []
+    for c in candidats:
+        if c.get("duree") == duree_annule:
+            users_c = [u["username"] for u in c.get("users", [])]
+            if len(users_c) == nb_annule:
+                set_c = set(users_c)
+                if set_annule & set_c:  # intersection
+                    phase2.append(c)
+    return phase2
+
+
+def filtrer_phase2b(rdv_annule, candidats):
+    """
+    PHASE 2.5 : même durée, même nb poseurs, >=1 poseur dans 'users_recommended'.
+    """
+    duree_annule = rdv_annule.get("duree", "1")
+    users_annule = [u["username"] for u in rdv_annule.get("users", [])]
+    nb_annule = len(users_annule)
+    set_annule = set(users_annule)
+
+    phase2b = []
+    for c in candidats:
+        if c.get("duree") == duree_annule:
+            users_c = [u["username"] for u in c.get("users", [])]
+            if len(users_c) == nb_annule:
+                recommended_c = [u for u in c.get("users_recommended", [])]
+                recommended_names = set(u["username"] for u in recommended_c)
+                if set_annule & recommended_names:
+                    phase2b.append(c)
+    return phase2b
+
+
+def filtrer_phase2c(rdv_annule, candidats):
+    """
+    PHASE 2.6 : même durée, même nb poseurs, pas de contrainte de commun.
+    """
+    duree_annule = rdv_annule.get("duree", "1")
+    users_annule = rdv_annule.get("users", [])
+    nb_annule = len(users_annule)
+
+    phase2c = []
+    for c in candidats:
+        if c.get("duree") == duree_annule:
+            users_c = c.get("users", [])
+            if len(users_c) == nb_annule:
+                phase2c.append(c)
+    return phase2c
+
+
+def filtrer_phase3(rdv_annule, candidats):
+    """
+    PHASE 3 : ex. autoriser durée <= duree_annule (non implémenté ici).
+    """
+    return candidats
