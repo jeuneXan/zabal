@@ -17,34 +17,27 @@ def reaffecter_rdv(data):
     list
         liste de dictionnaires (rendez-vous) qui ont été modifiés durant le processus.
     """
-    
-    liste_rdv = data.get("liste_rdv", [])
-    personne_absente = data.get("personne_absente", None)
-    
-    # -- 1) Convertir les dates en datetime si ce n'est pas déjà fait --
-    #     (Optionnel si le format est déjà datetime, sinon utiliser to_datetime)
-    for rdv in liste_rdv:
-        # On suppose que rdv["date_debut"] et rdv["date_fin"] 
-        # peuvent être déjà des datetime. À adapter selon ton usage réel.
-        if not isinstance(rdv["date_debut"], datetime):
-            rdv["date_debut"] = to_datetime(rdv["date_debut"])
-        if not isinstance(rdv["date_fin"], datetime):
-            rdv["date_fin"] = to_datetime(rdv["date_fin"])
+    liste_rdv = data.get("sorted_data", [])
+    personne_absente = data.get("employe_absent", None)
+
     
     # -- 2) Séparer les RDV absents (qui incluent la personne_absente) et les autres --
     rdv_absent = []
     rdv_autres = []
+    print("list",liste_rdv)
     for rdv in liste_rdv:
         # Si la personne absente apparaît dans "affectation_ressources_defini"
         # => on considère ce RDV comme "rdv_absent"
         if personne_absente in rdv.get("affectation_ressources_defini", []):
+            print("abs",rdv)
             rdv_absent.append(rdv)
         else:
+            print("autre",rdv)
             rdv_autres.append(rdv)
     
     # -- Pour éviter de dupliquer dans la liste finale, on garde un set des ID modifiés --
     changed_rdvs = {}
-    
+
     # Helper pour vérifier le chevauchement de dates
     def chevauchement(r1, r2):
         """
@@ -63,6 +56,7 @@ def reaffecter_rdv(data):
     for rdv_a in rdv_absent:
         # On retire la ressource absente
         old_defini = rdv_a.get("affectation_ressources_defini", [])
+        print("old_defini",old_defini)
         if personne_absente in old_defini:
             new_defini = [res for res in old_defini if res != personne_absente]
             rdv_a["affectation_ressources_defini"] = new_defini
@@ -75,7 +69,7 @@ def reaffecter_rdv(data):
         
         # On récupère la liste des ressources possibles
         possibles = rdv_a.get("affectation_ressources_possible", [])
-        
+        print("possibles",possibles)
         # Récupère la coordonnée GPS du RDV absent (pour distance)
         lat_a, lon_a = get_lat_lon(rdv_a)
         
@@ -142,7 +136,9 @@ def reaffecter_rdv(data):
             
             # On “vole” cette ressource (ou elle est libre)
             # => pour chaque RDV en conflit, on annule leurs ressources + date
+            print("Best conflit",best_conflits)
             for victime in best_conflits:
+                print("Grosse victime",victime)
                 victime["date_debut"] = None
                 victime["date_fin"] = None
                 victime["affectation_ressources_defini"] = []
@@ -152,6 +148,7 @@ def reaffecter_rdv(data):
                 changed_rdvs[victime["id_rdv"]] = victime
             
             # On ajoute cette ressource au RDV absent
+            print("best",best_ressource)
             new_resources_assigned.append(best_ressource)
         
         # -- Fin de la boucle d’assignation pour ce RDV absent --
@@ -172,5 +169,5 @@ def reaffecter_rdv(data):
     
     # -- 4) Construire la liste des RDV modifiés à partir de changed_rdvs --
     liste_modifies = list(changed_rdvs.values())
-    
+    print("liste_modifies",liste_modifies)
     return liste_modifies

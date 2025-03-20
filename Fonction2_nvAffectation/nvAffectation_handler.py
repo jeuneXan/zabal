@@ -19,10 +19,9 @@ def run_nvAffectation(data):
     print("employe", employe_absent)
     data_for_algo = {
         "sorted_data": sorted_data,
-        "employe_absent": employe_absent
+        "employe_absent": int(employe_absent)
     }
     print("lancement algo", data_for_algo)
     result = reaffecter_rdv(data_for_algo)
     
-    print(result)
     return result

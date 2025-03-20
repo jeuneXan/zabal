@@ -1,6 +1,7 @@
 # optimisation_handler.py
 from Fonction1_Optimisation.optimisationTournee_tri import optimisationTournee_tri
 from Fonction1_Optimisation.optimisationTournee_algo import optimize_schedule
+from Fonction1_Optimisation.optimisationTournee_majDISC import update_interventions
 
 def run_optimisation(data):
     """
@@ -17,7 +18,8 @@ def run_optimisation(data):
     # Étape 2 : Application de l'algorithme d'optimisation sur les données triées
     print("lancement optimize")
     nb_days = data.get("nbJours")
+    print("avant opt",sorted_data)
     result = optimize_schedule(sorted_data, nb_days)
-    
-    print(result)
-    return result
+    print("apres opt",result)
+    maj_DISC = update_interventions(result)
+    return maj_DISC

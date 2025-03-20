@@ -127,7 +127,14 @@ def filter_and_transform_intervention(interv, remp_start, remp_end):
     """
 
     # --- 1. Déterminer la plage de date pertinente selon le statut ---
-    statusrv = interv.get("statusrv", "").lower()
+    if interv.get("dateProposedToClient") == 1 and interv.get("dateValidatedWithClient") == 0 :
+        statusrv="proposé"
+    elif interv.get("dateValidatedWithClient") == 0 :
+        statusrv="convenu"
+    else :
+        statusrv="modifiable"
+        
+    
     if statusrv in ["proposé", "convenu"]:
         # Si modifiable, on utilise daterv et datervfin
         date_debut_val = interv.get("daterv")
@@ -146,10 +153,12 @@ def filter_and_transform_intervention(interv, remp_start, remp_end):
             date_fin_val = remp_end
         modifiable = 1
         # Pour l'affectation des ressources, on utilisera "user_recommanded"
-        if interv.get("users") :
-            ressources = [user.get("id") for user in interv.get("users", [])]
-        else :
-            return None
+        ressources = [user.get("id") for user in interv.get("users", [])]
+
+    if interv.get("user_recommanded") :
+        ressources_possibles = [user.get("id") for user in interv.get("user_recommanded", [])]
+    else :
+        ressources_possibles=get_poseur_ids()
 
     # --- 2. Conversion des dates en objets datetime ---
     rdv_start = to_datetime(date_debut_val)
@@ -160,12 +169,13 @@ def filter_and_transform_intervention(interv, remp_start, remp_end):
         return None
 
     # --- 3. Vérifier l'intersection de l'intervalle du rendez-vous avec la plage d'optimisation ---
+
     rdv_start = rdv_start.replace(tzinfo=None) if rdv_start.tzinfo else rdv_start
     rdv_end   = rdv_end.replace(tzinfo=None)   if rdv_end.tzinfo   else rdv_end
 
     remp_start = remp_start.replace(tzinfo=None) if remp_start.tzinfo else remp_start
     remp_end   = remp_end.replace(tzinfo=None)   if remp_end.tzinfo   else remp_end
-
+    
     if rdv_end < remp_start or rdv_start > remp_end:
         return None  # Pas d'intersection
 
@@ -176,6 +186,7 @@ def filter_and_transform_intervention(interv, remp_start, remp_end):
     # --- 6. Filtrage sur les marchandises ---
     marchandises = interv.get("marchandises", [])
     effective_start = rdv_start  # La date de début effective initiale est celle du rendez-vous
+
     if marchandises:
         for march in marchandises:
             status_march = march.get("statusmarchandise", {}).get("nom", "")
@@ -201,7 +212,6 @@ def filter_and_transform_intervention(interv, remp_start, remp_end):
     
     final_date_debut = effective_start.isoformat()
     final_date_fin   = rdv_end.isoformat()
-
     # --- 8. Filtre des rendez vous nous complétés ---
     gps = get_gps(interv.get("chantier", {}).get("id"))
     if not interv.get("nb_intervenants_mandatory") :
@@ -214,11 +224,12 @@ def filter_and_transform_intervention(interv, remp_start, remp_end):
     output = {
             "id_rdv": interv.get("id"),
             "modifiable": modifiable,
-            "criticite": "1",
+            "criticite": interv.get("criticity"),
             "duree": interv.get("duree"),
             "nombre_ressources": nb_intervenants,
             "coordonnees_gps": gps,
-            "affectation_ressources": ressources,
+            "affectation_ressources_defini": ressources,
+            "affectation_ressources_possible": ressources_possibles,
             "date_debut": final_date_debut,
             "date_fin": final_date_fin
         }
@@ -231,37 +242,34 @@ def nvAffectation_tri(data):
     Fonction de tri pour le remplacement d'affectation
     
     Paramètre d'entrée (data) :
-      - Un dictionnaire contenant au moins les champs "employe", date_debut et date_fin
-    
-    Étapes :
-
+      - Un dictionnaire contenant au moins les champs "employe", "dateDebut" et "dateFin"
     
     Retour :
-      - Une liste d'objets rendez-vous structurés.
+      - Une liste d'objets rendez-vous structurés sans doublons (basés sur "id_rdv").
     """
     date_debut = data.get("dateDebut")
-    date_fin =  data.get("dateFin")
-    print(date_debut, date_fin)
-    # On fixe la date de début à aujourd'hui (en ignorant l'heure pour simplifier, si besoin vous pouvez conserver l'heure)
+    date_fin = data.get("dateFin")
+    # On fixe la date de début et la date de fin selon les données d'entrée
     remp_start = to_datetime(date_debut)
-    # Calculer la date de fin en ajoutant nb_jours ouvrés
     remp_end = to_datetime(date_fin)
 
     # 2. Appel à l'API du DISC
-
     jours_interventions = call_disc_api(remp_start, remp_end)
     
-
-
-    # 3. Filtrage et transformation
+    # 3. Filtrage, transformation et déduplication
     output_list = []
-    for jour in jours_interventions :
+    seen_ids = set()  # Ensemble pour stocker les id_rdv déjà rencontrés
+    for jour in jours_interventions:
         rvs = jour.get("rvs")
         for interv in rvs:
             transformed = filter_and_transform_intervention(interv, remp_start, remp_end)
             if transformed:
-                output_list.append(transformed)
+                id_rdv = transformed.get("id_rdv")
+                if id_rdv not in seen_ids:
+                    output_list.append(transformed)
+                    seen_ids.add(id_rdv)
     return output_list
+
 
 # Pour tester localement la fonction (optionnel)
 #if __name__ == "__main__":

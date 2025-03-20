@@ -40,6 +40,8 @@ def login_to_api():
 
     response = session.post(login_url, data=login_data, allow_redirects=False)
 
+    print("login",login_data)
+
     # Vérification de la connexion
     if response.status_code in [302, 200]:  # 302 = redirection après connexion réussie
         print("✅ Connexion réussie !")

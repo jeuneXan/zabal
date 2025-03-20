@@ -93,8 +93,10 @@ def get_gps(idChantier):
 
 
 def call_disc_api(date_start: datetime, date_end: datetime):
+    date_start_call = date_start.strftime("%d/%m/%Y")
+    date_end_call = date_end.strftime("%d/%m/%Y")
     base_url = os.environ.get("API_URL", "https://preprod.disc-chantier.com")
-    endpoint = "/api/rvinterventions/by-dates?datestart=25/02/2025&dateend=25/02/2025"  # Modifier si nécessaire
+    endpoint = f"/api/rvinterventions/by-dates?datestart={date_start_call}&dateend={date_end_call}"  # Modifier si nécessaire
     url = f"{base_url}{endpoint}"
 
 
@@ -109,59 +111,74 @@ def call_disc_api(date_start: datetime, date_end: datetime):
         
         if not interventions:
             print("⚠️ L'API n'a retourné aucun rendez-vous !")
-        
         return interventions
     except requests.RequestException as e:
         return []  # Retourne une liste vide en cas d'erreur
 
 
 
-
 def filter_and_transform_intervention(interv, opt_start, opt_end):
     """
     Applique le filtrage et la transformation sur une intervention issue de l'API DISC.
-    
+
     opt_start, opt_end : la plage d'optimisation calculée (objet datetime)
 
     Retourne un dictionnaire structuré selon les spécifications ou None si le rendez-vous est exclu.
     """
 
-    # --- 1. Déterminer la plage de date pertinente selon le statut ---
-    statusrv = interv.get("statusrv", "").lower()
+    # --- 1. Déterminer le statut et la modifiabilité ---
+    if interv.get("dateProposedToClient") == 1 and interv.get("dateValidatedWithClient") == 0 :
+        statusrv="proposé"
+    elif interv.get("dateValidatedWithClient") == 0 :
+        statusrv="convenu"
+    else :
+        statusrv="modifiable"
+
     if statusrv in ["proposé", "convenu"]:
-        # Si modifiable, on utilise daterv et datervfin
-        date_debut_val = interv.get("daterv")
-        date_fin_val   = interv.get("datervfin")
         modifiable = 0
         # Pour l'affectation des ressources, on utilisera "users"
         ressources = [user.get("id") for user in interv.get("users", [])]
     else:
-        # Sinon, utiliser datevoulueclientde et datevoulueclienta
-        date_debut_val = interv.get("datevoulueclientde")
-        date_fin_val   = interv.get("datevoulueclienta")
-        # Si les dates sont absentes ou vides, on utilise la plage d'optimisation
-        if not date_debut_val or (isinstance(date_debut_val, str) and not date_debut_val.strip()):
-            date_debut_val = opt_start
-        if not date_fin_val or (isinstance(date_fin_val, str) and not date_fin_val.strip()):
-            date_fin_val = opt_end
         modifiable = 1
-        # Pour l'affectation des ressources, on utilisera "user_recommanded"
-        if interv.get("user_recommanded") :
+        # Pour l'affectation des ressources, on utilisera "user_recommanded" si présent sinon la liste des poseurs
+        if interv.get("user_recommanded"):
             ressources = [user.get("id") for user in interv.get("user_recommanded", [])]
-        else :
-            ressources=get_poseur_ids()
+        else:
+            ressources = get_poseur_ids()
 
-    # --- 2. Conversion des dates en objets datetime ---
-    rdv_start = to_datetime(date_debut_val)
-    rdv_end   = to_datetime(date_fin_val)
+    # --- 2. Extraction des dates depuis l'API ---
+    # Dates de rendez-vous (toujours issues de "daterv" et "datervfin")
+    rdv_date_debut_val = interv.get("daterv")
+    rdv_date_fin_val   = interv.get("datervfin")
+    # Dates client (toujours issues de "datevoulueclientde" et "datevoulueclienta")
+    client_date_debut_val = interv.get("datevoulueclientde")
+    client_date_fin_val   = interv.get("datevoulueclienta")
 
-    if rdv_start is None or rdv_end is None:
-        print(f"Erreur: Impossible de convertir les dates pour l'intervention {interv.get('id')}.")
+    # Conversion en datetime
+    rdv_start = to_datetime(rdv_date_debut_val)
+    rdv_end   = to_datetime(rdv_date_fin_val)
+    client_start = to_datetime(client_date_debut_val) if client_date_debut_val and str(client_date_debut_val).strip() else None
+    client_end   = to_datetime(client_date_fin_val) if client_date_fin_val and str(client_date_fin_val).strip() else None
+
+    opt_start_std = to_datetime(opt_start)
+    opt_end_std   = to_datetime(opt_end)
+
+    # --- 3. Vérification de l'intersection avec la plage d'optimisation ---
+    # Vérification de l'intervalle rdv
+    rdv_intersect = False
+    if rdv_start and rdv_end:
+        rdv_intersect = not (rdv_end < opt_start_std or rdv_start > opt_end_std)
+        print("rdvinter",rdv_intersect, (rdv_end < opt_start_std or rdv_start > opt_end_std))
+
+    # Vérification de l'intervalle client (seulement si les deux dates sont présentes)
+    client_intersect = False
+    if client_start and client_end:
+        client_intersect = not (client_end < opt_start_std or client_start > opt_end_std)
+
+    # L'intervention est conservée s'il y a intersection sur l'un ou l'autre des intervalles
+    if not (rdv_intersect or client_intersect):
+        print("sortie1", interv.get("id") ,rdv_end, opt_start_std, rdv_start, opt_end_std, client_end, client_start)
         return None
-
-    # --- 3. Vérifier l'intersection de l'intervalle du rendez-vous avec la plage d'optimisation ---
-    if rdv_end < opt_start or rdv_start > opt_end:
-        return None  # Pas d'intersection
 
     # --- 4. (Filtrage sur le contrôle des supports peut être ajouté ici) ---
 
@@ -170,6 +187,7 @@ def filter_and_transform_intervention(interv, opt_start, opt_end):
     # --- 6. Filtrage sur les marchandises ---
     marchandises = interv.get("marchandises", [])
     effective_start = rdv_start  # La date de début effective initiale est celle du rendez-vous
+
     if marchandises:
         for march in marchandises:
             status_march = march.get("statusmarchandise", {}).get("nom", "")
@@ -177,46 +195,56 @@ def filter_and_transform_intervention(interv, opt_start, opt_end):
                 continue
             elif status_march == "Commandé":
                 dateARC_val = march.get("dateARC")
+                if not dateARC_val:
+                    dateARC_val = datetime.datetime.now()
                 dateARC = to_datetime(dateARC_val)
                 if dateARC is None and statusrv not in ["proposé", "convenu"]:
                     print(f"Erreur de conversion de dateARC pour l'intervention {interv.get('id')}.")
+                    print("sortie2")
                     return None
                 # Pour comparer, on rend les datetime naïfs
-                dateARC_naive = dateARC.replace(tzinfo=None) if dateARC.tzinfo else dateARC
+                dateARC_naive = dateARC.replace(tzinfo=None) if dateARC and dateARC.tzinfo else dateARC
                 opt_end_naive = opt_end.replace(tzinfo=None) if opt_end.tzinfo else opt_end
+                effective_start_naive = effective_start.replace(tzinfo=None) if effective_start.tzinfo else effective_start
                 if dateARC_naive > opt_end_naive and statusrv not in ["proposé", "convenu"]:
+                    print("sortie3")
                     return None
-                if dateARC_naive > effective_start and dateARC_naive <= opt_end_naive:
-                    effective_start = dateARC_naive
+                if dateARC_naive > effective_start_naive and dateARC_naive <= opt_end_naive:
+                    effective_start = dateARC
             else:
+                print("sortie4")
                 return None
 
     # --- 7. Transformation de l'intervention dans le format de sortie ---
-    
-    final_date_debut = effective_start.isoformat()
-    final_date_fin   = rdv_end.isoformat()
+    final_date_debut_rdv = rdv_start.isoformat() if rdv_start else None
+    final_date_fin_rdv   = rdv_end.isoformat() if rdv_end else None
+    final_date_debut_client = client_start.isoformat() if client_start else None
+    final_date_fin_client   = client_end.isoformat() if client_end else None
 
-    # --- 8. Filtre des rendez vous nous complétés ---
+    # --- 8. Filtre des rendez-vous non complétés ---
+
     gps = get_gps(interv.get("chantier", {}).get("id"))
-    if not interv.get("nb_intervenants_mandatory") :
-        nb_intervenants=1
+    if not interv.get("nb_intervenants_mandatory"):
+        nb_intervenants = 1
     else:
-        nb_intervenants=interv.get("nb_intervenants_mandatory")
+        nb_intervenants = interv.get("nb_intervenants_mandatory")
     if (not gps or not interv.get("duree")) and statusrv not in ["proposé", "convenu"]:
+        print("sortie5")
         return None
-    
-    output = {
-            "id_rdv": interv.get("id"),
-            "modifiable": modifiable,
-            "duree": interv.get("duree"),
-            "nombre_ressources": nb_intervenants,
-            "coordonnees_gps": gps,
-            "affectation_ressources": ressources,
-            "date_debut": final_date_debut,
-            "date_fin": final_date_fin
-        }
-    return output
 
+    output = {
+        "id_rdv": interv.get("id"),
+        "modifiable": modifiable,
+        "duree": interv.get("duree"),
+        "nombre_ressources": nb_intervenants,
+        "coordonnees_gps": gps,
+        "affectation_ressources": ressources,
+        "date_debut_rdv": final_date_debut_rdv,
+        "date_fin_rdv": final_date_fin_rdv,
+        "date_debut_client": final_date_debut_client,
+        "date_fin_client": final_date_fin_client
+    }
+    return output
 
 
 def optimisationTournee_tri(data):
@@ -262,14 +290,16 @@ def optimisationTournee_tri(data):
 
 
     # 3. Filtrage et transformation
-    output_list = []
-    for jour in jours_interventions :
-        rvs = jour.get("rvs")
+    unique_interventions = {}
+    for jour in jours_interventions:
+        rvs = jour.get("rvs", [])
         for interv in rvs:
             transformed = filter_and_transform_intervention(interv, opt_start, opt_end)
             if transformed:
-                output_list.append(transformed)
-    return output_list
+             unique_interventions[transformed["id_rdv"]] = transformed
+    return list(unique_interventions.values())
+
+
 
 # Pour tester localement la fonction (optionnel)
 #if __name__ == "__main__":
