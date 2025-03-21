@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
 """
-Script complet d’optimisation de planning avec OR‑Tools
+Script complet d'optimisation de planning avec OR‑Tools
 
 Ce script prend en entrée une liste de rendez‑vous (au format JSON ou dictionnaires)
 et un nombre de jours sur lesquels optimiser le planning.
@@ -36,7 +36,7 @@ AFTERNOON_END   = 17 * 60   # 17h00 = 1020
 # Capacité journalière en minutes de travail (uniquement les plages actives)
 DAILY_WORK_CAPACITY = (MORNING_END - MORNING_START) + (AFTERNOON_END - AFTERNOON_START)  # 240 + 180 = 420 minutes
 
-# Définition du dépôt (point de départ et d’arrivée des véhicules)
+# Définition du dépôt (point de départ et d'arrivée des véhicules)
 DEPOT_COORDINATES = (48.8566, 2.3522)  # Paris centre
 
 # Pénalité pour ne pas visiter un rendez‑vous (à ajuster)
@@ -149,8 +149,6 @@ def optimize_period_routing(appointments, day_date, period_start, period_end, ve
             tw_lower = lower_bound - period_start
             tw_upper = upper_bound - period_start
 
-        service_time = int(rdv["duree"])
-        
         # Traitement des coordonnées
         try:
             coord = parse_gps(rdv["coordonnees_gps"])
@@ -158,11 +156,31 @@ def optimize_period_routing(appointments, day_date, period_start, period_end, ve
             print(f"Erreur lors du parsing des coordonnées pour rdv id {rdv['id_rdv']}: {e}")
             continue
         
+        # Vérification de la durée
+        if not rdv.get("duree"):
+            print(f"⚠️ Le rendez-vous {rdv['id_rdv']} n'a pas de durée définie. Il sera ignoré.")
+            continue
+        service_time = int(rdv["duree"])
+        
         # Déterminer les véhicules autorisés
         if rdv["modifiable"] == 0:
-            allowed = [rdv["affectation_ressources"][0]]
+            # Pour les rendez-vous non modifiables, s'assurer que la ressource est un poseur
+            allowed = [res for res in rdv["affectation_ressources"] if res in vehicles]
+            # Si aucune ressource n'est un poseur valide, ignorer ce rendez-vous
+            if not allowed:
+                print(f"⚠️ Le rendez-vous non modifiable {rdv['id_rdv']} n'a pas de poseurs valides, il sera ignoré.")
+                continue
         else:
-            allowed = rdv["affectation_ressources"]
+            # Ne considérer que les ressources qui sont des "poseurs"
+            allowed = [res for res in rdv["affectation_ressources"] if res in vehicles]
+            # Si aucune ressource n'est disponible, ignorer ce rendez-vous
+            if not allowed:
+                print(f"⚠️ Le rendez-vous {rdv['id_rdv']} n'a pas de poseurs valides parmi ses affectations, il sera ignoré.")
+                continue
+                
+        # Vérification supplémentaire pour exclure explicitement Serge Haramboure
+        allowed = [res for res in allowed if "serge haramboure" not in str(res).lower()]
+        
         allowed_vehicle_indices = [i for i, emp in enumerate(vehicles) if emp in allowed]
         if not allowed_vehicle_indices:
             continue
@@ -314,12 +332,29 @@ def optimize_schedule(appointments, nb_days):
     Retourne une liste (de dictionnaires JSON) contenant uniquement les rendez‑vous modifiés,
     avec mise à jour des champs "date_debut_rdv", "date_fin_rdv" et "affectation_ressources".
     """
-    # Construction de la liste globale des employés
+    # Construction de la liste globale des employés (uniquement les poseurs)
+    from Fonction1_Optimisation.optimisationTournee_tri import get_poseur_ids
+    
+    # Récupérer la liste des IDs de poseurs
+    poseurs = get_poseur_ids()
+    print(f"Liste des poseurs disponibles: {poseurs}")
+    
+    # Liste des IDs d'utilisateurs spécifiquement exclus
+    utilisateurs_exclus = []  # Ajouter ici les IDs à exclure si nécessaire
+    
     vehicles_set = set()
     for rdv in appointments:
         for emp in rdv["affectation_ressources"]:
-            vehicles_set.add(emp)
+            # Ne conserver que les employés qui sont des poseurs et qui ne sont pas exclus
+            if emp in poseurs and emp not in utilisateurs_exclus:
+                vehicles_set.add(emp)
+    
+    # Vérification finale de sécurité pour s'assurer que Serge Haramboure n'est pas inclus
+    # Cette vérification peut être supprimée une fois que le problème est résolu de manière permanente
+    vehicles_set = {v for v in vehicles_set if "serge haramboure" not in str(v).lower()}
+    
     vehicles = sorted(list(vehicles_set))
+    print(f"Véhicules disponibles pour l'optimisation: {vehicles}")
     
     appointments_mod = deepcopy(appointments)
     updated_rdvs = {}
@@ -327,6 +362,9 @@ def optimize_schedule(appointments, nb_days):
     # Pré‑traitement pour les rendez‑vous multi‑journée :
     # Si la durée dépasse la capacité journalière (420 minutes), on planifie sur plusieurs jours.
     for rdv in appointments_mod:
+        if not rdv.get("duree"):
+            print(f"⚠️ Le rendez-vous {rdv.get('id_rdv')} n'a pas de durée définie. Il sera ignoré.")
+            continue
         duration = int(rdv["duree"])
         if duration > DAILY_WORK_CAPACITY:
             nb_required_days = math.ceil(duration / DAILY_WORK_CAPACITY)

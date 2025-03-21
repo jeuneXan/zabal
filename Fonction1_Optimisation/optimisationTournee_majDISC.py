@@ -30,7 +30,7 @@ def update_intervention(intervention, session):
     url = f"{base_url}/api/rvinterventions/{intervention_id}"
     
 
-    users_for_patch=f"/api/users/{intervention_id}"
+    users_for_patch = [f"/api/users/{resource}" for resource in intervention.get('affectation_ressources')]
 
     payload = {
         "users": users_for_patch,
@@ -38,7 +38,7 @@ def update_intervention(intervention, session):
         "datervfin": intervention.get("date_fin_rdv")
     }
     
-    headers = {"Content-Type": "application/json"}
+    headers = {"Content-Type": "application/merge-patch+json"}
     print(url, payload, headers)
     try:
         response = session.patch(url, json=payload, headers=headers)
@@ -62,6 +62,7 @@ def update_interventions(interventions_list):
     for intervention in interventions_list:
         result = update_intervention(intervention, session)
         results.append(result)
+    print(results)    
     return results
 
 # Exemple d'utilisation

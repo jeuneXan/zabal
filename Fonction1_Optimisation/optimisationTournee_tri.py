@@ -36,7 +36,6 @@ def get_poseur_ids():
     endpoint = "/api/typeusers"  # Modifier si nécessaire
     url = f"{base_url}{endpoint}"
 
-
     try:
         # Obtenir la session API authentifiée
         session = get_api_session()
@@ -44,23 +43,36 @@ def get_poseur_ids():
         response = session.get(url)
         response.raise_for_status()  # Gère les erreurs HTTP
 
-        users = response.json()
+        types_users = response.json()
         
-        if not users:
-            print("⚠️ L'API n'a retourné aucun rendez-vous !")
+        if not types_users:
+            print("⚠️ L'API n'a retourné aucun type d'utilisateur !")
+            return []
         
         poseurs = []
-        for group in users:
-            if group.get("nom", "").strip().lower() == "poseur":
+        print("types_users", types_users)
+        for group in types_users:
+            # Vérifier précisément si le groupe est celui des poseurs
+            if group.get("nom", "").strip().lower() == "poseur" :
                 # Extraire les IDs de tous les users de ce groupe
+                print("group", group)
                 for user in group.get("users", []):
                     user_id = user.get("id")
-                    if user_id is not None:
+                    username = user.get("username", "").lower()
+                    
+                    # Vérifier que l'ID est valide et que l'utilisateur n'est pas "serge haramboure"
+                    if user_id is not None and user_id != 39 and user.get("status") == 0:
+                        print("user_id", user_id)
                         poseurs.append(user_id)
-                break  # On s'arrête dès qu'on a trouvé le groupe "Poseur"
-    
+                # Comme les types d'utilisateurs sont mutuellement exclusifs, on peut arrêter la recherche
+                break
+        
+        if not poseurs:
+            print("⚠️ Aucun poseur n'a été trouvé dans l'API !")
+        print("poseurs", poseurs)
         return poseurs
     except requests.RequestException as e:
+        print(f"⚠️ Erreur lors de l'appel API pour récupérer les poseurs: {str(e)}")
         return []
 
 
@@ -140,11 +152,17 @@ def filter_and_transform_intervention(interv, opt_start, opt_end):
         ressources = [user.get("id") for user in interv.get("users", [])]
     else:
         modifiable = 1
-        # Pour l'affectation des ressources, on utilisera "user_recommanded" si présent sinon la liste des poseurs
+        # Pour l'affectation des ressources, on utilisera uniquement les poseurs
+        poseurs = get_poseur_ids()
+        # Filtrer les recommandations pour ne garder que les poseurs
         if interv.get("user_recommanded"):
-            ressources = [user.get("id") for user in interv.get("user_recommanded", [])]
+            ressources = [user.get("id") for user in interv.get("user_recommanded", []) 
+                         if user.get("id") in poseurs]
+            # Si aucun poseur parmi les recommandations, prendre tous les poseurs
+            if not ressources:
+                ressources = poseurs
         else:
-            ressources = get_poseur_ids()
+            ressources = poseurs
 
     # --- 2. Extraction des dates depuis l'API ---
     # Dates de rendez-vous (toujours issues de "daterv" et "datervfin")
@@ -168,7 +186,6 @@ def filter_and_transform_intervention(interv, opt_start, opt_end):
     rdv_intersect = False
     if rdv_start and rdv_end:
         rdv_intersect = not (rdv_end < opt_start_std or rdv_start > opt_end_std)
-        print("rdvinter",rdv_intersect, (rdv_end < opt_start_std or rdv_start > opt_end_std))
 
     # Vérification de l'intervalle client (seulement si les deux dates sont présentes)
     client_intersect = False
@@ -177,7 +194,6 @@ def filter_and_transform_intervention(interv, opt_start, opt_end):
 
     # L'intervention est conservée s'il y a intersection sur l'un ou l'autre des intervalles
     if not (rdv_intersect or client_intersect):
-        print("sortie1", interv.get("id") ,rdv_end, opt_start_std, rdv_start, opt_end_std, client_end, client_start)
         return None
 
     # --- 4. (Filtrage sur le contrôle des supports peut être ajouté ici) ---
@@ -196,7 +212,7 @@ def filter_and_transform_intervention(interv, opt_start, opt_end):
             elif status_march == "Commandé":
                 dateARC_val = march.get("dateARC")
                 if not dateARC_val:
-                    dateARC_val = datetime.datetime.now()
+                    dateARC_val = datetime.now()
                 dateARC = to_datetime(dateARC_val)
                 if dateARC is None and statusrv not in ["proposé", "convenu"]:
                     print(f"Erreur de conversion de dateARC pour l'intervention {interv.get('id')}.")
